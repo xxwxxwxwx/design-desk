@@ -1,0 +1,13 @@
+.cost-confirm {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+  color: #d6e5e2;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.cost-confirm input {
+  accent-color: #14c1c1;
+}

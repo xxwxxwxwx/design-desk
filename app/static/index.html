@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="饭团小红书招募海报工作台">
+  <title>饭团招募海报工作台</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/cost-confirm.css">
+  <link rel="stylesheet" href="/api-key.css">
+</head>
+<body>
+  <div class="ambient ambient-a" aria-hidden="true"></div>
+  <div class="ambient ambient-b" aria-hidden="true"></div>
+  <header class="topbar">
+    <div class="brand-lockup">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <div><strong>饭团设计工作台</strong><span>Recruitment Poster Studio</span></div>
+    </div>
+    <button id="apiState" class="api-state" type="button"><span></span>正在检查生成服务</button>
+  </header>
+
+  <main class="workspace">
+    <section class="intro">
+      <p class="eyebrow">饭团 · 小红书招募</p>
+      <h1>把活动事实和真实产品，<br><em>变成一张可发布的海报。</em></h1>
+      <p>上传素材、填写活动信息，系统会生成主视觉，并自动合成饭团固定信息条。</p>
+    </section>
+
+    <div class="editor-grid">
+      <form id="posterForm" class="form-panel" novalidate>
+        <section class="form-section asset-section">
+          <div class="section-head">
+            <div><span class="step">01</span><h2>上传真实素材</h2></div>
+            <span id="assetCount" class="count">0 / 9</span>
+          </div>
+          <p class="section-help">上传菜品、饮品、环境或风格参考。商家 Logo 在下方单独上传。</p>
+          <label id="dropzone" class="dropzone" for="images">
+            <input id="images" name="images" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
+            <span class="drop-icon" aria-hidden="true">+</span>
+            <strong>选择或拖入图片</strong>
+            <span>JPG、PNG、WebP · 单张不超过 20 MB</span>
+          </label>
+          <div id="assetGrid" class="asset-grid" aria-live="polite"></div>
+        </section>
+
+        <section class="form-section">
+          <div class="section-head"><div><span class="step">02</span><h2>填写活动事实</h2></div></div>
+          <p class="section-help">这些内容将锁定到海报中。不确定的信息可以留空，系统不会自行补造。</p>
+          <div class="fields two-col">
+            <label><span>商家名称 <b>*</b></span><input name="merchant_name" required placeholder="例如：澜记香港茶餐厅"></label>
+            <label><span>招募类型 <b>*</b></span>
+              <select name="recruitment_type" required>
+                <option value="">请选择</option><option>品鉴官</option><option>体验官</option><option>试喝官</option><option>素人品鉴官</option><option>霸王餐体验官</option><option>饭团周末</option><option>其他招募</option>
+              </select>
+            </label>
+            <label class="span-2"><span>主标题</span><input name="headline" placeholder="留空则根据招募类型自动生成"></label>
+            <label><span>招募人数</span><input name="recruitment_count" placeholder="例如：10 人"></label>
+            <label><span>活动时间</span><input name="event_date" placeholder="例如：11 月 8 日 14:00"></label>
+            <label class="span-2"><span>活动地址</span><input name="address" placeholder="请填写完整地址"></label>
+            <label class="span-2"><span>体验内容或福利</span><textarea name="offer" rows="3" placeholder="例如：双人套餐，每人最高体验额度 $50"></textarea></label>
+            <label class="span-2"><span>报名条件</span><textarea name="requirements" rows="3" placeholder="例如：活动后 3 天内发布真实体验笔记"></textarea></label>
+            <label><span>报名方式</span><input name="registration" placeholder="例如：扫码报名"></label>
+            <label><span>通知说明</span><input name="notice" placeholder="例如：入选后统一通知"></label>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <div class="section-head"><div><span class="step">03</span><h2>选择视觉方向</h2></div></div>
+          <div class="choice-grid" role="radiogroup" aria-label="视觉风格">
+            <label class="choice"><input type="radio" name="style" value="根据商家素材自动判断" checked><span><i class="swatch auto"></i><b>智能匹配</b><small>根据商家和产品判断</small></span></label>
+            <label class="choice"><input type="radio" name="style" value="年轻活力"><span><i class="swatch energy"></i><b>年轻活力</b><small>明快、高对比、更小红书</small></span></label>
+            <label class="choice"><input type="radio" name="style" value="品牌质感"><span><i class="swatch brand"></i><b>品牌质感</b><small>克制、精致、强调商家气质</small></span></label>
+            <label class="choice"><input type="radio" name="style" value="复古手作"><span><i class="swatch retro"></i><b>复古手作</b><small>纸张、印刷和手绘质感</small></span></label>
+          </div>
+          <div class="fields two-col compact-fields">
+            <label><span>重点突出</span><select name="emphasis"><option>招募人数</option><option>体验福利</option><option>真实产品</option><option>活动主题</option></select></label>
+            <label><span>信息条模式</span><select id="overlayMode" name="overlay_mode"><option value="co_brand">饭团＋商家联名</option><option value="fantuan_only">仅饭团</option></select></label>
+            <label id="logoField" class="span-2 logo-field"><span>商家 Logo <b>*</b></span><input id="merchantLogo" name="merchant_logo" type="file" accept="image/png,image/jpeg,image/webp"><small>仅用于最终确定性合成，不发给图片模型重绘。</small></label>
+            <label class="span-2"><span>其他要求</span><textarea name="additional_notes" rows="3" placeholder="例如：产品一主两辅；时间先留空"></textarea></label>
+          </div>
+        </section>
+
+        <div class="submit-dock">
+          <div><strong>生成 1 张最终海报</strong><span>1080 × 1440 PNG · KIE Sunburst · 按实际用量计费</span><label class="cost-confirm"><input name="cost_confirmation" type="checkbox" required> 我确认本次调用付费 API 生成 1 张图片</label></div>
+          <button id="generateButton" type="submit"><span>开始创建</span><i aria-hidden="true">→</i></button>
+        </div>
+      </form>
+
+      <aside class="preview-panel">
+        <div class="preview-head"><div><span class="live-dot"></span>成品预览</div><span>3:4</span></div>
+        <div id="previewStage" class="preview-stage">
+          <div id="emptyPreview" class="empty-preview">
+            <div class="poster-ghost"><span></span><span></span><span></span></div>
+            <strong>海报会出现在这里</strong>
+            <p>填写左侧表单并点击“开始创建”</p>
+          </div>
+          <div id="workingState" class="working-state" hidden>
+            <div class="scan-poster"><div class="scanline"></div></div>
+            <strong id="workingTitle">正在整理素材</strong>
+            <p id="workingDetail">保留真实产品和活动事实…</p>
+          </div>
+          <img id="resultImage" alt="生成的饭团小红书招募海报" hidden>
+        </div>
+        <div id="resultActions" class="result-actions" hidden>
+          <div><span class="success-check">✓</span><p><strong>机械验证通过</strong><small>尺寸与固定模板像素已核对；视觉仍需人工确认。</small></p></div>
+          <a id="downloadButton" class="download-button" href="#" download>下载 PNG</a>
+        </div>
+        <div id="errorBox" class="error-box" hidden><strong>未能创建海报</strong><p></p></div>
+        <div class="preview-note"><span>i</span><p>真实素材只用于本次生成。Logo 会在生成主视觉后再原样合成。</p></div>
+      </aside>
+    </div>
+  </main>
+  <dialog id="apiKeyDialog" class="key-dialog">
+    <form id="apiKeyForm" method="dialog">
+      <div class="dialog-head"><div><span class="key-icon">◆</span><div><strong>配置图片 API</strong><small>仅当前本地运行会话有效</small></div></div><button id="closeKeyDialog" type="button" aria-label="关闭">×</button></div>
+      <label class="key-input"><span>KIE API Key</span><input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴 KIE API Key"><small>保存时仅调用 KIE 积分查询验证，不会生成图片。Key 只发送到本机并保存在内存中。</small></label>
+      <p id="keyMessage" class="key-message" hidden></p>
+      <div class="dialog-actions"><button id="clearKey" class="clear-key" type="button">清除当前 Key</button><button class="save-key" type="submit">保存并启用</button></div>
+    </form>
+  </dialog>
+  <script src="/app.js" defer></script>
+</body>
+</html>
+

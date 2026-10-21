@@ -1,0 +1,23 @@
+.api-state { border: 0; cursor: pointer; }
+.api-state:hover { transform: translateY(-1px); }
+.key-dialog { width: min(460px, calc(100vw - 28px)); padding: 0; border: 0; border-radius: 20px; color: #122423; box-shadow: 0 30px 90px rgba(10, 38, 35, .28); }
+.key-dialog::backdrop { background: rgba(9, 27, 26, .42); backdrop-filter: blur(7px); }
+.key-dialog form { padding: 24px; }
+.dialog-head,.dialog-head>div,.dialog-actions { display: flex; align-items: center; }
+.dialog-head { justify-content: space-between; margin-bottom: 24px; }
+.dialog-head>div { gap: 12px; }
+.dialog-head>div>div { display: flex; flex-direction: column; gap: 2px; }
+.dialog-head strong { font-size: 16px; }
+.dialog-head small { color: #7b8987; font-size: 10px; }
+.key-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; color: white; background: #14c1c1; }
+.dialog-head>button { width: 32px; height: 32px; border: 0; border-radius: 50%; background: #edf2f0; color: #53625f; font-size: 20px; cursor: pointer; }
+.key-input { display: flex; flex-direction: column; gap: 7px; }
+.key-input>span { font-size: 12px; font-weight: 800; }
+.key-input input { width: 100%; padding: 12px; border: 1px solid #d3dedb; border-radius: 11px; outline: none; font: 13px "SFMono-Regular",Consolas,monospace; }
+.key-input input:focus { border-color: #14c1c1; box-shadow: 0 0 0 3px rgba(20,193,193,.12); }
+.key-input small { color: #7b8987; font-size: 10px; line-height: 1.5; }
+.key-message { margin: 13px 0 0; padding: 9px 10px; border-radius: 9px; color: #9a472c; background: #fff1e9; font-size: 10px; }
+.dialog-actions { justify-content: space-between; margin-top: 22px; }
+.dialog-actions button { padding: 10px 13px; border-radius: 10px; font-weight: 800; font-size: 11px; cursor: pointer; }
+.clear-key { border: 1px solid #d8e1df; color: #687775; background: white; }
+.save-key { border: 0; color: #083432; background: #14c1c1; }

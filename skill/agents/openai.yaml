@@ -1,0 +1,8 @@
+interface:
+  display_name: "饭团小红书招募海报"
+  short_description: "从商家素材与活动事实生成并合成饭团信息条的最终海报"
+  default_prompt: "使用 $create-fantuan-xiaohongshu-recruitment-poster 根据这些商家素材和活动信息生成一张完整的饭团小红书招募海报。"
+
+policy:
+  allow_implicit_invocation: true
+
