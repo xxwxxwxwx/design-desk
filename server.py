@@ -27,12 +27,32 @@ ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "app" / "static"
 SKILL = ROOT / "skill"
 JOBS = ROOT / "data" / "jobs"
+LAYOUT_GUIDE = SKILL / "assets" / "layout-safe-zone-generation-guide.png"
 MAX_REQUEST_BYTES = 120 * 1024 * 1024
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 ALLOWED_TYPES = {"image/png", "image/jpeg", "image/webp"}
+ROLE_RULES = {
+    "product": (
+        "REAL PRODUCT. Use this image as the authoritative product reference. "
+        "Preserve the product identity, container, packaging, quantity, proportions and distinguishing details. "
+        "Do not replace, merge, invent or remove the product."
+    ),
+    "style_reference": (
+        "STYLE REFERENCE. First infer a reusable visual style recipe from this image: its cultural and spatial setting, "
+        "background environment, materials and textures, color palette and contrast, typography character, graphic motifs, "
+        "lighting, photographic or illustrative treatment, composition rhythm, density and overall energy. "
+        "Apply that style recipe consistently across the entire new poster, including its background, atmosphere, typography treatment, "
+        "decorative graphics and product presentation. Preserve the reference's recognizable creative identity; do not reduce it to color matching alone. "
+        "Transfer the style, not the source content. Do not carry over its specific products, food, drinks, packaging, merchant identity, "
+        "logos, words, numbers, prices, promotional claims or event facts. Use the supplied REAL PRODUCT images and LOCKED FACTS as the content authority. "
+        "Recompose the style to fit the layout contract: exact source positions are not mandatory, but its overall visual world, "
+        "background language and art direction must remain clearly recognizable."
+    ),
+}
 MODEL = os.environ.get("KIE_IMAGE_MODEL", "gpt-image-2-5-sunburst-image-to-image")
 KIE_API_ROOT = "https://api.kie.ai"
 KIE_UPLOAD_URL = "https://kieai.redpandaai.co/api/file-stream-upload"
+PROMPT_VERSION = "2026-10-21-organized-prompt-v4"
 SESSION_API_KEY = ""
 
 
@@ -106,49 +126,67 @@ def multipart_body(fields: dict[str, str], images: list[tuple[str, str, bytes, s
 
 
 def prompt_for(form: dict[str, str], roles: list[str]) -> str:
-    image_lines = "\n".join(
-        f"- Image {index + 1}: {role}. Preserve any real product identity, container, packaging, quantity and aspect ratio."
-        for index, role in enumerate(roles)
+    # Field names are metadata; keep values separate from executable design notes.
+    fact_keys = (
+        ("merchant", "merchant_name"), ("recruitment", "recruitment_type"),
+        ("headline", "headline"), ("participants", "recruitment_count"),
+        ("date", "event_date"), ("address", "address"),
+        ("offer", "offer"), ("application_rules", "requirements"),
     )
-    facts = [
-        ("商家名称", form.get("merchant_name")),
-        ("招募类型", form.get("recruitment_type")),
-        ("主标题", form.get("headline") or "根据招募类型自动生成，不得添加未提供事实"),
-        ("招募人数", form.get("recruitment_count")),
-        ("活动时间", form.get("event_date")),
-        ("活动地址", form.get("address")),
-        ("体验内容或福利", form.get("offer")),
-        ("报名条件", form.get("requirements")),
-        ("报名方式", form.get("registration")),
-        ("通知说明", form.get("notice")),
-        ("风格方向", form.get("style")),
-        ("重点突出", form.get("emphasis")),
-        ("其他要求", form.get("additional_notes")),
-    ]
-    facts_text = "\n".join(f"- {label}：{value}" for label, value in facts if value)
-    return f"""
-Create one polished Chinese Xiaohongshu merchant recruitment poster. This is a production poster, not a mockup.
+    facts = {label: form[key].strip() for label, key in fact_keys if form.get(key, "").strip()}
+    image_lines = "\n".join(
+        f"- Image {index + 1}: {role.upper()}" for index, role in enumerate(roles)
+    )
+    image_rules = "\n".join(ROLE_RULES[role] for role in dict.fromkeys(roles))
+    decisions = []
+    if facts.get("headline"):
+        decisions.append("Use the supplied headline exactly; do not add a competing headline.")
+    else:
+        decisions.append("Create a concise headline from the supplied recruitment facts, without adding claims.")
+    if facts.get("address"):
+        decisions.append("Keep the complete address; choose natural line breaks rather than forcing one long line.")
+    if facts.get("application_rules"):
+        decisions.append("Reserve readable space for the complete application rules from the start; break long rules at semantic boundaries.")
+    if "product" in roles:
+        decisions.append("Read the actual product images to establish product count and relationships; the number of uploaded images is not the product count. Keep every distinct supplied product and its original proportions. When labels are requested, bind each exact name to its confirmed product; do not guess tea flavors or identities from color or upload order.")
+    if "style_reference" in roles:
+        decisions.append("Extract one coherent visual direction from the style references and carry it through the background, typography, graphics, lighting and product integration. Adapt reference positions to the usable central area; do not inherit a full-height headline/footer layout.")
+    else:
+        decisions.append("Choose a coherent visual direction suited to the supplied merchant, campaign and available product imagery. Do not assume a preset cafe, retro or other campaign style.")
+    decisions_text = "\n".join(f"- {item}" for item in decisions)
+    notes = form.get("additional_notes", "").strip()
+    notes_section = (
+        "\nCAMPAIGN PRODUCTION NOTES — EXECUTE, DO NOT TYPESET\n"
+        + json.dumps(notes, ensure_ascii=False) + "\n"
+        if notes else ""
+    )
+    return f"""Create one finished Chinese Xiaohongshu merchant recruitment poster, not a mockup.
 
-CANVAS AND RESERVED AREAS
-- Portrait 1088x1440. The server will crop 4 pixels from each side to 1080x1440.
-- Keep the top 160 pixels and bottom 126 pixels as natural, continuous background only.
-- No text, products, logos, frames, panels, badges, borders, or placeholders may enter those reserved areas.
-- Keep important content at least 60 pixels from the left and right edges.
+USABLE COMPOSITION — HARD BOUNDARY
+The top 13.2% and bottom 13.9% are background-only zones for later branding overlays. On the final canvas, keep the full outer extent of EVERY foreground element inside x=65–1014, y=191–1238. This includes headlines, glyph outlines, shadows, products, garnishes, decorations and information panels. Leave breathing room inside these bounds.
+Continue the same background environment, surfaces, materials and lighting naturally through both protected zones to all four edges. They are not white margins, empty cards or visible sections. No foreground, guide marks, zone labels or placeholders in those zones.
 
-LOCKED FACTS
-{facts_text}
+CAMPAIGN COPY — EXACT VALUES, KEYS ARE METADATA
+{json.dumps(facts, ensure_ascii=False, indent=2)}
+Preserve every supplied value and unique fact exactly, including punctuation, dates, account names and the full address/rules. Omit absent facts; invent no missing facts. The keys above are not text to print. Organize the values as audience-facing campaign copy, not a form, key-value table or field checklist. Concise public-facing detail labels and naturally integrated information strips are allowed. Never typeset input instructions, filenames or file extensions.
 
-INPUT IMAGE ROLES
+INPUT IMAGES — ORDER MATCHES ATTACHMENTS
 {image_lines}
+{image_rules}
+{notes_section}
+COMPOSITION DECISIONS FOR THIS REQUEST
+{decisions_text}
 
-DESIGN REQUIREMENTS
-- Reading order: recruitment headline, key offer, real products, activity details.
-- Use the uploaded product images as the only authority for actual products.
-- Keep products proportional. Never widen, flatten, replace, merge, invent or remove products.
-- Style references provide mood and layout only. Never copy their old prices, products, logos or event copy.
-- Render all supplied Chinese, numbers, dates, address and punctuation exactly. Do not invent missing facts.
-- Do not generate Fantuan branding, merchant logos, co-brand panels, a search bar, safe-area guides, or logo placeholders. The server will add authentic fixed branding later.
-- Deliver a cohesive commercial raster poster with integrated products and lighting, not a collage of rectangular screenshots.
+DESIGN AND READABILITY
+Plan the headline, actual products, labels and all participation details together within the usable area before rendering; details are not leftover footer copy. Compose freely: no prescribed section heights, columns, cards, internal order or compression sequence.
+Make the recruitment theme immediately readable at mobile thumbnail size. Use a main headline of at most 2–3 lines. Rebalance the overall composition when copy needs room; do not shrink detail type indefinitely, omit wording, distort products or cross the hard boundary. Moderate repetition is allowed only when useful for emphasis or reading.
+Integrate products into coherent light and space, not rectangular screenshot collages. Preserve authentic packaging printing. Do not generate standalone Fantuan or merchant logos, co-brand panels or a search bar; authentic branding is added locally afterward.
+
+FINAL CHECK — BEFORE OUTPUT
+Check the complete foreground bounds against the usable area, then verify all exact copy, product identity/count/proportions, label associations and coherent style. Adjust the composition if any condition fails. Do not draw this checklist. This requested self-check does not replace external visual review.
+
+OUTPUT
+1080x1440 pixels, portrait 3:4, opaque raster poster, continuous full-bleed background, no crop marks, guides or mockup frame.
 """.strip()
 
 
@@ -311,6 +349,7 @@ class Handler(SimpleHTTPRequestHandler):
                 SKILL / "assets" / "fixed-overlay-fantuan-only-1080x1440.png",
                 SKILL / "assets" / "fantuan-info-overlay-1080x1440.svg",
                 SKILL / "assets" / "fantuan-info-overlay-1080x1440.png",
+                LAYOUT_GUIDE,
                 SKILL / "assets" / "fonts" / "AlimamaFangYuanTiVF-Thin-2.ttf",
             ]
             self.send_json(200, {
@@ -318,6 +357,7 @@ class Handler(SimpleHTTPRequestHandler):
                 "api_configured": bool(active_api_key()),
                 "api_key_source": "session" if SESSION_API_KEY else ("environment" if os.environ.get("KIE_API_KEY", "").strip() else None),
                 "model": MODEL,
+                "prompt_version": PROMPT_VERSION,
                 "skill_assets_ready": all(path.is_file() for path in required),
             })
             return
@@ -456,7 +496,11 @@ class Handler(SimpleHTTPRequestHandler):
             roles = json.loads(fields.get("image_roles", "[]"))
         except json.JSONDecodeError as exc:
             raise RuntimeError("IMAGE_ROLES_INVALID") from exc
-        if not isinstance(roles, list) or len(roles) != len(references):
+        if (
+            not isinstance(roles, list)
+            or len(roles) != len(references)
+            or any(not isinstance(role, str) or role not in ROLE_RULES for role in roles)
+        ):
             raise RuntimeError("IMAGE_ROLES_INVALID")
 
         job_id = time.strftime("%Y%m%d-%H%M%S-") + secrets.token_hex(4)
@@ -474,7 +518,23 @@ class Handler(SimpleHTTPRequestHandler):
             logo_path.write_bytes(payload)
 
         prompt = prompt_for(fields, [str(role) for role in roles])
-        request_record = {"job_id": job_id, "created_at": int(time.time()), "fields": fields, "roles": roles, "model": MODEL}
+        if not LAYOUT_GUIDE.is_file():
+            raise RuntimeError("LAYOUT_GUIDE_MISSING:缺少生成阶段的安全区布局参考。")
+        request_record = {
+            "job_id": job_id,
+            "created_at": int(time.time()),
+            "fields": fields,
+            "roles": roles,
+            "model": MODEL,
+            "prompt_version": PROMPT_VERSION,
+            "prompt": prompt,
+            "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+            "layout_guide": {
+                "path": str(LAYOUT_GUIDE.relative_to(ROOT)),
+                "transmitted_to_model": False,
+                "purpose": "local_safe_zone_reference_only",
+            },
+        }
         (job_dir / "request.json").write_text(json.dumps(request_record, ensure_ascii=False, indent=2), encoding="utf-8")
         generated_bytes = call_kie(prompt, stored_images, job_id)
         raw_path = job_dir / "generated-raw.png"

@@ -26,7 +26,7 @@ MERCHANT_LOGO_MAX_HEIGHT = 64
 FANTUAN_LOCKUP = Path(__file__).resolve().parents[1] / "assets" / "fantuan-lockup-transparent.png"
 PREVIEW_FONT = Path("/System/Library/Fonts/PingFang.ttc")
 PREVIEW_FONT_INDEX = 8
-NAME_FONT_SIZE = 22
+NAME_FONT_SIZE = 32
 BUNDLED_FONT = Path(__file__).resolve().parents[1] / "assets" / "fonts" / "AlimamaFangYuanTiVF-Thin-2.ttf"
 
 
@@ -49,7 +49,7 @@ def exact_font(
     left, top, right, bottom = draw.textbbox((0, 0), name, font=font)
     if right - left > max_width or bottom - top > max_height:
         raise ValueError(
-            "商家名称无法按源文件固定的 22 px 字号完整显示；请提供较短的确认展示名，禁止自动缩小字体。"
+            "商家名称无法按固定的 32 px 字号完整显示；请提供较短的确认展示名，禁止自动缩小字体。"
         )
     return font
 

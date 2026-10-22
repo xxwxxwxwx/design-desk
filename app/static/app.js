@@ -25,8 +25,7 @@ const closeKeyDialog = document.querySelector('#closeKeyDialog');
 
 let assets = [];
 const roles = [
-  ['product', '真实产品'], ['merchant_reference', '商家参考'], ['style_reference', '风格参考'],
-  ['layout_reference', '版式参考'], ['mascot', '吉祥物 / IP'], ['other', '其他素材']
+  ['product', '真实产品'], ['style_reference', '风格参考']
 ];
 
 async function checkHealth() {

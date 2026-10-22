@@ -59,23 +59,14 @@
             <label><span>活动时间</span><input name="event_date" placeholder="例如：11 月 8 日 14:00"></label>
             <label class="span-2"><span>活动地址</span><input name="address" placeholder="请填写完整地址"></label>
             <label class="span-2"><span>体验内容或福利</span><textarea name="offer" rows="3" placeholder="例如：双人套餐，每人最高体验额度 $50"></textarea></label>
-            <label class="span-2"><span>报名条件</span><textarea name="requirements" rows="3" placeholder="例如：活动后 3 天内发布真实体验笔记"></textarea></label>
-            <label><span>报名方式</span><input name="registration" placeholder="例如：扫码报名"></label>
-            <label><span>通知说明</span><input name="notice" placeholder="例如：入选后统一通知"></label>
+            <label class="span-2"><span>报名规则</span><textarea name="requirements" rows="3" placeholder="例如：关注账号，在笔记下方评论“报名”并填写参加时间；入选后请及时回复私信"></textarea></label>
           </div>
         </section>
 
         <section class="form-section">
-          <div class="section-head"><div><span class="step">03</span><h2>选择视觉方向</h2></div></div>
-          <div class="choice-grid" role="radiogroup" aria-label="视觉风格">
-            <label class="choice"><input type="radio" name="style" value="根据商家素材自动判断" checked><span><i class="swatch auto"></i><b>智能匹配</b><small>根据商家和产品判断</small></span></label>
-            <label class="choice"><input type="radio" name="style" value="年轻活力"><span><i class="swatch energy"></i><b>年轻活力</b><small>明快、高对比、更小红书</small></span></label>
-            <label class="choice"><input type="radio" name="style" value="品牌质感"><span><i class="swatch brand"></i><b>品牌质感</b><small>克制、精致、强调商家气质</small></span></label>
-            <label class="choice"><input type="radio" name="style" value="复古手作"><span><i class="swatch retro"></i><b>复古手作</b><small>纸张、印刷和手绘质感</small></span></label>
-          </div>
+          <div class="section-head"><div><span class="step">03</span><h2>完成输出设置</h2></div></div>
           <div class="fields two-col compact-fields">
-            <label><span>重点突出</span><select name="emphasis"><option>招募人数</option><option>体验福利</option><option>真实产品</option><option>活动主题</option></select></label>
-            <label><span>信息条模式</span><select id="overlayMode" name="overlay_mode"><option value="co_brand">饭团＋商家联名</option><option value="fantuan_only">仅饭团</option></select></label>
+            <label class="span-2"><span>信息条模式</span><select id="overlayMode" name="overlay_mode"><option value="co_brand">饭团＋商家联名</option><option value="fantuan_only">仅饭团</option></select></label>
             <label id="logoField" class="span-2 logo-field"><span>商家 Logo <b>*</b></span><input id="merchantLogo" name="merchant_logo" type="file" accept="image/png,image/jpeg,image/webp"><small>仅用于最终确定性合成，不发给图片模型重绘。</small></label>
             <label class="span-2"><span>其他要求</span><textarea name="additional_notes" rows="3" placeholder="例如：产品一主两辅；时间先留空"></textarea></label>
           </div>
