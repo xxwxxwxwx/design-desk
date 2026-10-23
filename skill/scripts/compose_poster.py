@@ -27,10 +27,11 @@ FANTUAN_LOCKUP = Path(__file__).resolve().parents[1] / "assets" / "fantuan-locku
 PREVIEW_FONT = Path("/System/Library/Fonts/PingFang.ttc")
 PREVIEW_FONT_INDEX = 8
 NAME_FONT_SIZE = 32
+NAME_MIN_FONT_SIZE = 24
 BUNDLED_FONT = Path(__file__).resolve().parents[1] / "assets" / "fonts" / "AlimamaFangYuanTiVF-Thin-2.ttf"
 
 
-def exact_font(
+def fitted_name_font(
     name: str,
     draw: ImageDraw.ImageDraw,
     text_box: tuple[int, int, int, int],
@@ -40,18 +41,39 @@ def exact_font(
 ) -> ImageFont.FreeTypeFont:
     max_width = text_box[2] - text_box[0]
     max_height = text_box[3] - text_box[1]
-    font = ImageFont.truetype(str(font_path), NAME_FONT_SIZE, index=font_index)
-    if font_variation:
-        try:
-            font.set_variation_by_name(font_variation)
-        except (AttributeError, OSError, ValueError) as exc:
-            raise ValueError(f"字体不支持已确认字重 {font_variation!r}：{font_path}") from exc
-    left, top, right, bottom = draw.textbbox((0, 0), name, font=font)
-    if right - left > max_width or bottom - top > max_height:
-        raise ValueError(
-            "商家名称无法按固定的 32 px 字号完整显示；请提供较短的确认展示名，禁止自动缩小字体。"
-        )
-    return font
+    for size in range(NAME_FONT_SIZE, NAME_MIN_FONT_SIZE - 1, -1):
+        font = ImageFont.truetype(str(font_path), size, index=font_index)
+        if font_variation:
+            try:
+                font.set_variation_by_name(font_variation)
+            except (AttributeError, OSError, ValueError) as exc:
+                raise ValueError(f"字体不支持已确认字重 {font_variation!r}：{font_path}") from exc
+        left, top, right, bottom = draw.textbbox((0, 0), name, font=font)
+        if right - left <= max_width and bottom - top <= max_height:
+            return font
+    raise ValueError(
+        "商家名称即使缩小至 24 px 仍无法在底部品牌信息条中单行完整显示，请缩短商家名称。"
+    )
+
+
+def validate_merchant_name_layout(
+    name: str,
+    template_svg_path: Path,
+    font_path: Path,
+    font_index: int = 0,
+    font_variation: Optional[str] = None,
+) -> int:
+    """使用正式字体和 SVG 槽位预检商家名称，返回最大可用字号。"""
+    normalized = name.strip()
+    if not normalized:
+        raise ValueError("商家名称不能为空。")
+    if len(normalized) > 10:
+        raise ValueError("商家名称最多填写 10 个 Unicode 字符。")
+    draw = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    text_box = slot_box(template_svg_path, "merchant-name-slot")
+    return fitted_name_font(
+        normalized, draw, text_box, font_path, font_index, font_variation
+    ).size
 
 
 def slot_box(svg_path: Path, slot_id: str) -> tuple[int, int, int, int]:
@@ -153,7 +175,12 @@ def compose(
         if not FANTUAN_LOCKUP.is_file():
             raise ValueError(f"缺少饭团顶部矢量派生资源：{FANTUAN_LOCKUP}")
         draw.rectangle((0, 0, SIZE[0], HEADER_CLEAR_HEIGHT), fill=(0, 0, 0, 0))
-    draw.rectangle(name_text_box, fill=NAME_BACKGROUND)
+    # SVG rect 的右、下边界为排他终点；Pillow rectangle 的终点则会被绘制。
+    # 减 1 保证动态底色不会多覆盖固定模板边界像素。
+    draw.rectangle(
+        (name_text_box[0], name_text_box[1], name_text_box[2] - 1, name_text_box[3] - 1),
+        fill=NAME_BACKGROUND,
+    )
 
     if logo_path is not None:
         logo = crop_logo_artwork(Image.open(logo_path).convert("RGBA"))
@@ -179,7 +206,7 @@ def compose(
         overlay.alpha_composite(logo, (logo_x, logo_y))
 
     name = merchant_name.strip()
-    font = exact_font(name, draw, name_text_box, font_path, font_index, font_variation)
+    font = fitted_name_font(name, draw, name_text_box, font_path, font_index, font_variation)
     left, top, right, bottom = draw.textbbox((0, 0), name, font=font)
     text_width, text_height = right - left, bottom - top
     x = name_text_box[0] + (name_text_box[2] - name_text_box[0] - text_width) / 2 - left

@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/cost-confirm.css">
   <link rel="stylesheet" href="/api-key.css">
-  <style>.generation-stages{display:flex;gap:7px;justify-content:center;list-style:none;margin:15px 0 0;padding:0}.generation-stages li{color:#899794;font-size:9px}.generation-stages li+li::before{content:"→";margin-right:7px;color:#aab4b2}.generation-stages li.active{color:var(--teal-dark);font-weight:800}.generation-stages li.done{color:#50806f}</style>
+  <style>.generation-stages{display:flex;gap:7px;justify-content:center;list-style:none;margin:15px 0 0;padding:0}.generation-stages li{color:#899794;font-size:9px}.generation-stages li+li::before{content:"→";margin-right:7px;color:#aab4b2}.generation-stages li.active{color:var(--teal-dark);font-weight:800}.generation-stages li.done{color:#50806f}.field-hint{font-size:10px;color:#84918f;line-height:1.5}.field-hint.field-error{color:#b64b2d}.fields label[hidden]{display:none!important}</style>
 </head>
 <body>
   <div class="ambient ambient-a" aria-hidden="true"></div>
@@ -48,7 +48,7 @@
           <div class="section-head"><div><span class="step">02</span><h2>填写活动事实</h2></div></div>
           <p class="section-help">这些内容将锁定到海报中。不确定的信息可以留空，系统不会自行补造。</p>
           <div class="fields two-col">
-            <label><span>商家名称 <b>*</b></span><input name="merchant_name" required placeholder="例如：澜记香港茶餐厅"></label>
+            <label><span>商家名称 <b>*</b></span><input id="merchantName" name="merchant_name" required aria-describedby="merchantNameHint" placeholder="例如：澜记香港茶餐厅"><small id="merchantNameHint" class="field-hint" aria-live="polite">最多 10 个字符</small></label>
             <label><span>招募类型 <b>*</b></span>
               <select name="recruitment_type" required>
                 <option value="">请选择</option><option>品鉴官</option><option>体验官</option><option>试喝官</option><option>素人品鉴官</option><option>霸王餐体验官</option><option>饭团周末</option><option>其他招募</option>
@@ -66,7 +66,7 @@
         <section class="form-section">
           <div class="section-head"><div><span class="step">03</span><h2>完成输出设置</h2></div></div>
           <div class="fields two-col compact-fields">
-            <label class="span-2"><span>信息条模式</span><select id="overlayMode" name="overlay_mode"><option value="co_brand">饭团＋商家联名</option><option value="fantuan_only">仅饭团</option></select></label>
+            <label class="span-2"><span>信息条模式</span><select id="overlayMode" name="overlay_mode"><option value="co_brand">饭团 + 商家 Logo</option><option value="fantuan_only">仅饭团 Logo</option></select></label>
             <label id="logoField" class="span-2 logo-field"><span>商家 Logo <b>*</b></span><input id="merchantLogo" name="merchant_logo" type="file" accept="image/png,image/jpeg,image/webp"><small>仅用于最终确定性合成，不发给图片模型重绘。</small></label>
             <label class="span-2"><span>其他要求</span><textarea name="additional_notes" rows="3" placeholder="例如：产品一主两辅；时间先留空"></textarea></label>
           </div>

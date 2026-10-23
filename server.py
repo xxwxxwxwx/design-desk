@@ -9,6 +9,7 @@ import os
 import secrets
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -171,11 +172,13 @@ def compose_final(base_path: Path, logo_path: Path | None, merchant_name: str, o
     sys.path.insert(0, str(SKILL / "scripts"))
     from compose_poster import BUNDLED_FONT, compose  # type: ignore
 
-    template_svg = SKILL / "assets" / "fantuan-info-overlay-1080x1440.svg"
-    template = SKILL / "assets" / (
-        "fantuan-info-overlay-1080x1440.png" if overlay_mode == "co_brand"
-        else "fixed-overlay-fantuan-only-1080x1440.png"
-    )
+    if overlay_mode == "co_brand":
+        template_svg = SKILL / "assets" / "fantuan-info-overlay-1080x1440.svg"
+        template = SKILL / "assets" / "fantuan-info-overlay-1080x1440.png"
+    else:
+        template_svg = SKILL / "assets" / "fantuan-only-info-overlay-1080x1440.svg"
+        template = SKILL / "assets" / "fantuan-only-info-overlay-1080x1440.png"
+        logo_path = None
     compose(
         base_path=base_path,
         logo_path=logo_path,
@@ -205,6 +208,51 @@ def compose_final(base_path: Path, logo_path: Path | None, merchant_name: str, o
         raise RuntimeError(f"OVERLAY_VALIDATION_FAILED:{completed.stderr or completed.stdout}")
 
 
+def validate_merchant_name(merchant_name: str, overlay_mode: str) -> int:
+    """在任何图片 API 调用前，用最终合成所用的真实字体和 SVG 槽位做预检。"""
+    scripts_path = str(SKILL / "scripts")
+    if scripts_path not in sys.path:
+        sys.path.insert(0, scripts_path)
+    from compose_poster import BUNDLED_FONT, validate_merchant_name_layout  # type: ignore
+
+    try:
+        return validate_merchant_name_layout(
+            merchant_name,
+            SKILL / "assets" / (
+                "fantuan-info-overlay-1080x1440.svg"
+                if overlay_mode == "co_brand"
+                else "fantuan-only-info-overlay-1080x1440.svg"
+            ),
+            BUNDLED_FONT,
+            font_index=0,
+            font_variation="SemiBold",
+        )
+    except ValueError as exc:
+        raise RuntimeError(f"MERCHANT_NAME_INVALID:{exc}") from exc
+
+
+def preflight_brand_overlay(
+    merchant_name: str,
+    overlay_mode: str,
+    logo: tuple[str, str, bytes, str] | None,
+) -> None:
+    """付费图片 API 前执行一次完整的本地品牌合成和固定像素校验。"""
+    try:
+        with tempfile.TemporaryDirectory(prefix="fantuan-brand-preflight-") as directory:
+            preflight_dir = Path(directory)
+            base_path = preflight_dir / "base.png"
+            output_path = preflight_dir / "output.png"
+            Image.new("RGB", (1080, 1440), (237, 242, 240)).save(base_path)
+            logo_path: Path | None = None
+            if logo is not None:
+                _, _, payload, content_type = logo
+                logo_path = preflight_dir / f"merchant-logo{safe_suffix(content_type)}"
+                logo_path.write_bytes(payload)
+            compose_final(base_path, logo_path, merchant_name, overlay_mode, output_path)
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"BRAND_PREFLIGHT_FAILED:{exc}") from exc
+
+
 class Handler(SimpleHTTPRequestHandler):
     server_version = f"FantuanPosterWorkbench/{APP_VERSION}"
 
@@ -230,7 +278,8 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/health":
             required = [
-                SKILL / "assets" / "fixed-overlay-fantuan-only-1080x1440.png",
+                SKILL / "assets" / "fantuan-only-info-overlay-1080x1440.svg",
+                SKILL / "assets" / "fantuan-only-info-overlay-1080x1440.png",
                 SKILL / "assets" / "fantuan-info-overlay-1080x1440.svg",
                 SKILL / "assets" / "fantuan-info-overlay-1080x1440.png",
                 SKILL / "assets" / "fantuan-lockup-transparent.png",
@@ -324,6 +373,14 @@ class Handler(SimpleHTTPRequestHandler):
             print(f"Generation failed: {code[:1800]}")
             if code == "KIE_API_KEY_MISSING":
                 self.send_json(503, {"error": code, "message": "服务端还没有配置 KIE_API_KEY。"})
+            elif code.startswith("MERCHANT_NAME_INVALID:"):
+                self.send_json(422, {"error": "MERCHANT_NAME_INVALID", "message": code.split(":", 1)[1]})
+            elif code.startswith("BRAND_PREFLIGHT_FAILED:"):
+                self.send_json(422, {
+                    "error": "BRAND_PREFLIGHT_FAILED",
+                    "message": "品牌信息条本地预检未通过，尚未调用图片 API。",
+                    "detail": code.split(":", 1)[1][:1800],
+                })
             elif code.startswith("KIE_"):
                 self.send_json(502, {"error": code.split(":", 1)[0], "message": "图片 API 调用失败。", "detail": code[:1800]})
             else:
@@ -392,6 +449,7 @@ class Handler(SimpleHTTPRequestHandler):
         overlay_mode = fields.get("overlay_mode", "co_brand")
         if overlay_mode not in {"co_brand", "fantuan_only"}:
             raise RuntimeError("OVERLAY_MODE_INVALID")
+        validate_merchant_name(merchant_name, overlay_mode)
         if overlay_mode == "co_brand" and len(logos) != 1:
             raise RuntimeError("MERCHANT_LOGO_REQUIRED:联名模式需要一张真实商家 Logo。")
         try:
@@ -404,6 +462,12 @@ class Handler(SimpleHTTPRequestHandler):
             or any(not isinstance(role, str) or role not in ROLE_RULES for role in roles)
         ):
             raise RuntimeError("IMAGE_ROLES_INVALID")
+
+        preflight_brand_overlay(
+            merchant_name,
+            overlay_mode,
+            logos[0] if logos else None,
+        )
 
         job_id = time.strftime("%Y%m%d-%H%M%S-") + secrets.token_hex(4)
         job_dir = JOBS / job_id

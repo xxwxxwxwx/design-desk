@@ -6,6 +6,8 @@ const dropzone = document.querySelector('#dropzone');
 const overlayMode = document.querySelector('#overlayMode');
 const logoField = document.querySelector('#logoField');
 const merchantLogo = document.querySelector('#merchantLogo');
+const merchantName = document.querySelector('#merchantName');
+const merchantNameHint = document.querySelector('#merchantNameHint');
 const apiState = document.querySelector('#apiState');
 const button = document.querySelector('#generateButton');
 const emptyPreview = document.querySelector('#emptyPreview');
@@ -27,9 +29,25 @@ const clearKey = document.querySelector('#clearKey');
 const closeKeyDialog = document.querySelector('#closeKeyDialog');
 
 let assets = [];
+const MERCHANT_NAME_MAX_CHARS = 10;
 const roles = [
   ['product', '真实产品'], ['style_reference', '风格参考']
 ];
+
+function validateMerchantName() {
+  const count = Array.from(merchantName.value).length;
+  const overflow = count > MERCHANT_NAME_MAX_CHARS;
+  merchantName.setCustomValidity(overflow ? `商家名称最多填写 ${MERCHANT_NAME_MAX_CHARS} 个字符。` : '');
+  merchantName.classList.toggle('invalid', overflow);
+  merchantNameHint.textContent = overflow
+    ? `已输入 ${count} 个字符，请删减至 ${MERCHANT_NAME_MAX_CHARS} 个以内`
+    : `${count} / ${MERCHANT_NAME_MAX_CHARS} 个字符`;
+  merchantNameHint.classList.toggle('field-error', overflow);
+  return !overflow;
+}
+
+merchantName.addEventListener('input', validateMerchantName);
+validateMerchantName();
 
 async function checkHealth() {
   try {
@@ -114,7 +132,9 @@ dropzone.addEventListener('drop', event => addFiles(event.dataTransfer.files));
 function syncLogoMode() {
   const required = overlayMode.value === 'co_brand';
   logoField.hidden = !required;
+  logoField.setAttribute('aria-hidden', String(!required));
   merchantLogo.required = required;
+  merchantLogo.setAttribute('aria-required', String(required));
   if (!required) merchantLogo.value = '';
 }
 overlayMode.addEventListener('change', syncLogoMode);
@@ -175,6 +195,7 @@ function showError(message) {
 form.addEventListener('submit', async event => {
   event.preventDefault();
   document.querySelectorAll('.invalid').forEach(el => el.classList.remove('invalid'));
+  validateMerchantName();
   if (!form.checkValidity()) { form.reportValidity(); return; }
   if (assets.length < 1) { dropzone.classList.add('invalid'); showError('请至少上传 1 张真实产品或参考图片。'); return; }
   if (overlayMode.value === 'co_brand' && !merchantLogo.files[0]) { merchantLogo.classList.add('invalid'); showError('联名模式需要上传真实商家 Logo。'); return; }
