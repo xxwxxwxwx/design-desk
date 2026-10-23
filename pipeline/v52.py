@@ -66,6 +66,7 @@ INPUT IMAGES
 
 CREATIVE DIRECTION
 - Infer one coherent visual world from the style reference and apply it to background, typography, graphics, lighting and product integration.
+- Treat each PRODUCT image only as a reference for the product subject itself: its physical form, packaging, label and product-logo details. Ignore and replace any white, solid-color, photographed or designed background surrounding the product. That source-image background is not part of the product and must never overwrite, flatten, whiten, frame or otherwise control the poster's creative background.
 - Preserve both real products, their packaging, labels, proportions and distinguishing details.
 - Put date, full address and complete application rules together inside ONE cohesive information box at the bottom of the central creative region. It must be one unified outer panel, not separate badges, cards or floating labels.
 - Inside that one panel, use exactly three vertically stacked information rows in this order: activity date, full activity address, complete application rules.

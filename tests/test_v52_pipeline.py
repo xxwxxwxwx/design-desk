@@ -58,6 +58,12 @@ class V52PipelineTests(unittest.TestCase):
         self.assertIn("compact audience-facing label on the left", prompt)
         self.assertIn("program must not re-typeset, split, shorten or rearrange", prompt)
 
+    def test_central_prompt_treats_product_background_as_non_authoritative(self):
+        prompt = v52.build_central_prompt({"merchant_name": "澜记"}, ["product"])
+        self.assertIn("only as a reference for the product subject itself", prompt)
+        self.assertIn("Ignore and replace any white, solid-color, photographed or designed background", prompt)
+        self.assertIn("must never overwrite, flatten, whiten, frame or otherwise control", prompt)
+
     def test_outpaint_prompt_rejects_white_from_transparency(self):
         prompt = v52.build_outpaint_prompt()
         self.assertIn("not a request for a white, blank or transparent background", prompt)
