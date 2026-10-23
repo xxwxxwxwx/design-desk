@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/cost-confirm.css">
   <link rel="stylesheet" href="/api-key.css">
+  <style>.generation-stages{display:flex;gap:7px;justify-content:center;list-style:none;margin:15px 0 0;padding:0}.generation-stages li{color:#899794;font-size:9px}.generation-stages li+li::before{content:"→";margin-right:7px;color:#aab4b2}.generation-stages li.active{color:var(--teal-dark);font-weight:800}.generation-stages li.done{color:#50806f}</style>
 </head>
 <body>
   <div class="ambient ambient-a" aria-hidden="true"></div>
@@ -22,8 +23,7 @@
 
   <main class="workspace">
     <section class="intro">
-      <p class="eyebrow">饭团 · 小红书招募</p>
-      <h1>把活动事实和真实产品，<br><em>变成一张可发布的海报。</em></h1>
+      <p class="eyebrow">饭团 · 小红书招募海报制作</p>
       <p>上传素材、填写活动信息，系统会生成主视觉，并自动合成饭团固定信息条。</p>
     </section>
 
@@ -73,7 +73,7 @@
         </section>
 
         <div class="submit-dock">
-          <div><strong>生成 1 张最终海报</strong><span>1080 × 1440 PNG · KIE Sunburst · 按实际用量计费</span><label class="cost-confirm"><input name="cost_confirmation" type="checkbox" required> 我确认本次调用付费 API 生成 1 张图片</label></div>
+          <div><strong>生成 1 张最终海报</strong><span>1080 × 1440 PNG · Prompt v5.2 · 预计 12 credits</span><label class="cost-confirm"><input name="cost_confirmation" type="checkbox" required> <span>我确认本次会调用 2 次付费 API（约 12 credits）</span></label></div>
           <button id="generateButton" type="submit"><span>开始创建</span><i aria-hidden="true">→</i></button>
         </div>
       </form>
@@ -88,13 +88,18 @@
           </div>
           <div id="workingState" class="working-state" hidden>
             <div class="scan-poster"><div class="scanline"></div></div>
-            <strong id="workingTitle">正在整理素材</strong>
-            <p id="workingDetail">保留真实产品和活动事实…</p>
+            <strong id="workingTitle">创意生成</strong>
+            <p id="workingDetail">正在生成中央完整创意…</p>
+            <ol class="generation-stages" aria-label="生成进度">
+              <li data-stage="creative">创意生成</li>
+              <li data-stage="outpaint">背景扩展</li>
+              <li data-stage="compose">品牌合成</li>
+            </ol>
           </div>
           <img id="resultImage" alt="生成的饭团小红书招募海报" hidden>
         </div>
         <div id="resultActions" class="result-actions" hidden>
-          <div><span class="success-check">✓</span><p><strong>机械验证通过</strong><small>尺寸与固定模板像素已核对；视觉仍需人工确认。</small></p></div>
+          <div><span class="success-check">✓</span><p><strong id="resultStatusTitle">机械验证通过</strong><small id="resultStatusNote">尺寸与固定模板像素已核对；视觉仍需人工确认。</small></p></div>
           <a id="downloadButton" class="download-button" href="#" download>下载 PNG</a>
         </div>
         <div id="errorBox" class="error-box" hidden><strong>未能创建海报</strong><p></p></div>

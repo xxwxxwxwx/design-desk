@@ -12,9 +12,12 @@ const emptyPreview = document.querySelector('#emptyPreview');
 const workingState = document.querySelector('#workingState');
 const workingTitle = document.querySelector('#workingTitle');
 const workingDetail = document.querySelector('#workingDetail');
+const generationStages = [...document.querySelectorAll('.generation-stages li')];
 const resultImage = document.querySelector('#resultImage');
 const resultActions = document.querySelector('#resultActions');
 const downloadButton = document.querySelector('#downloadButton');
+const resultStatusTitle = document.querySelector('#resultStatusTitle');
+const resultStatusNote = document.querySelector('#resultStatusNote');
 const errorBox = document.querySelector('#errorBox');
 const apiKeyDialog = document.querySelector('#apiKeyDialog');
 const apiKeyForm = document.querySelector('#apiKeyForm');
@@ -117,6 +120,41 @@ function syncLogoMode() {
 overlayMode.addEventListener('change', syncLogoMode);
 syncLogoMode();
 
+const stageCopy = {
+  creative: ['创意生成', '正在生成中央完整创意…'],
+  outpaint: ['背景扩展', '中央创意已生成，正在连续扩展上下环境背景…'],
+  compose: ['品牌合成', '背景扩展已完成，正在合成固定品牌信息条…'],
+  completed: ['品牌合成', '三阶段均已完成，正在载入最终海报…']
+};
+
+function showGenerationStage(stage) {
+  const [title, detail] = stageCopy[stage] || stageCopy.creative;
+  workingTitle.textContent = title;
+  workingDetail.textContent = detail;
+  const names = ['creative', 'outpaint', 'compose'];
+  const activeIndex = stage === 'completed' ? generationStages.length : Math.max(0, names.indexOf(stage));
+  generationStages.forEach((item, index) => {
+    item.classList.toggle('done', index < activeIndex);
+    item.classList.toggle('active', index === activeIndex);
+  });
+}
+
+async function trackGenerationProgress(progressId, signal) {
+  while (!signal.aborted) {
+    try {
+      const response = await fetch(`/api/progress/${progressId}`, {cache: 'no-store', signal});
+      if (response.ok) {
+        const payload = await response.json();
+        showGenerationStage(payload.stage);
+        if (payload.stage === 'completed' || payload.stage === 'failed') return;
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+    }
+    await new Promise(resolve => setTimeout(resolve, 800));
+  }
+}
+
 function setWorking(active) {
   button.disabled = active;
   button.querySelector('span').textContent = active ? '正在创建…' : '开始创建';
@@ -142,12 +180,15 @@ form.addEventListener('submit', async event => {
   if (overlayMode.value === 'co_brand' && !merchantLogo.files[0]) { merchantLogo.classList.add('invalid'); showError('联名模式需要上传真实商家 Logo。'); return; }
 
   const data = new FormData(form);
+  const progressId = crypto.randomUUID();
+  data.set('progress_id', progressId);
   data.delete('images');
   assets.forEach(asset => data.append('images', asset.file, asset.file.name));
   data.set('image_roles', JSON.stringify(assets.map(asset => asset.role)));
   setWorking(true);
-  workingTitle.textContent = '正在制作主视觉';
-  workingDetail.textContent = '保留真实产品，并为饭团信息条留出空间…';
+  showGenerationStage('creative');
+  const progressController = new AbortController();
+  const progressTracker = trackGenerationProgress(progressId, progressController.signal);
   try {
     const response = await fetch('/api/generate', {method: 'POST', body: data});
     const payload = await response.json();
@@ -155,7 +196,7 @@ form.addEventListener('submit', async event => {
       const detail = payload.detail ? payload.detail.replace(/^(?:OPENAI|KIE)_[A-Z_]+:\d*:?/, '').trim() : '';
       throw new Error(detail || payload.message || '生成失败。');
     }
-    workingTitle.textContent = '正在合成饭团信息条';
+    showGenerationStage('completed');
     const cacheBuster = `?v=${Date.now()}`;
     resultImage.src = payload.result.image_url + cacheBuster;
     await resultImage.decode();
@@ -164,9 +205,15 @@ form.addEventListener('submit', async event => {
     resultImage.hidden = false;
     resultActions.hidden = false;
     downloadButton.href = payload.result.download_url;
+    resultStatusTitle.textContent = '机械验证通过';
+    resultStatusNote.textContent = '尺寸与固定模板像素已核对；视觉仍需人工确认。';
+    downloadButton.textContent = '下载 PNG';
     errorBox.hidden = true;
   } catch (error) {
     showError(error.message || '生成失败，请检查服务状态。');
+  } finally {
+    progressController.abort();
+    await progressTracker;
   }
 });
 

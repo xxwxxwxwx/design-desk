@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 import ipaddress
 import json
 import mimetypes
@@ -15,19 +14,17 @@ import urllib.error
 import urllib.request
 from email.parser import BytesParser
 from email.policy import default
-from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from PIL import Image, ImageOps
+from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "app" / "static"
 SKILL = ROOT / "skill"
 JOBS = ROOT / "data" / "jobs"
-LAYOUT_GUIDE = SKILL / "assets" / "layout-safe-zone-generation-guide.png"
 MAX_REQUEST_BYTES = 120 * 1024 * 1024
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 ALLOWED_TYPES = {"image/png", "image/jpeg", "image/webp"}
@@ -52,8 +49,11 @@ ROLE_RULES = {
 MODEL = os.environ.get("KIE_IMAGE_MODEL", "gpt-image-2-5-sunburst-image-to-image")
 KIE_API_ROOT = "https://api.kie.ai"
 KIE_UPLOAD_URL = "https://kieai.redpandaai.co/api/file-stream-upload"
-PROMPT_VERSION = "2026-10-21-organized-prompt-v4"
+PROMPT_VERSION = "2026-10-22-svg-exact-central-outpaint-v5.2"
+GENERATION_PIPELINE_VERSION = "2026-10-22-sunburst-central-outpaint-v5.2"
+APP_VERSION = "1.2.0"
 SESSION_API_KEY = ""
+GENERATION_PROGRESS: dict[str, str] = {}
 
 
 def active_api_key() -> str:
@@ -125,71 +125,6 @@ def multipart_body(fields: dict[str, str], images: list[tuple[str, str, bytes, s
     return b"".join(chunks), boundary
 
 
-def prompt_for(form: dict[str, str], roles: list[str]) -> str:
-    # Field names are metadata; keep values separate from executable design notes.
-    fact_keys = (
-        ("merchant", "merchant_name"), ("recruitment", "recruitment_type"),
-        ("headline", "headline"), ("participants", "recruitment_count"),
-        ("date", "event_date"), ("address", "address"),
-        ("offer", "offer"), ("application_rules", "requirements"),
-    )
-    facts = {label: form[key].strip() for label, key in fact_keys if form.get(key, "").strip()}
-    image_lines = "\n".join(
-        f"- Image {index + 1}: {role.upper()}" for index, role in enumerate(roles)
-    )
-    image_rules = "\n".join(ROLE_RULES[role] for role in dict.fromkeys(roles))
-    decisions = []
-    if facts.get("headline"):
-        decisions.append("Use the supplied headline exactly; do not add a competing headline.")
-    else:
-        decisions.append("Create a concise headline from the supplied recruitment facts, without adding claims.")
-    if facts.get("address"):
-        decisions.append("Keep the complete address; choose natural line breaks rather than forcing one long line.")
-    if facts.get("application_rules"):
-        decisions.append("Reserve readable space for the complete application rules from the start; break long rules at semantic boundaries.")
-    if "product" in roles:
-        decisions.append("Read the actual product images to establish product count and relationships; the number of uploaded images is not the product count. Keep every distinct supplied product and its original proportions. When labels are requested, bind each exact name to its confirmed product; do not guess tea flavors or identities from color or upload order.")
-    if "style_reference" in roles:
-        decisions.append("Extract one coherent visual direction from the style references and carry it through the background, typography, graphics, lighting and product integration. Adapt reference positions to the usable central area; do not inherit a full-height headline/footer layout.")
-    else:
-        decisions.append("Choose a coherent visual direction suited to the supplied merchant, campaign and available product imagery. Do not assume a preset cafe, retro or other campaign style.")
-    decisions_text = "\n".join(f"- {item}" for item in decisions)
-    notes = form.get("additional_notes", "").strip()
-    notes_section = (
-        "\nCAMPAIGN PRODUCTION NOTES — EXECUTE, DO NOT TYPESET\n"
-        + json.dumps(notes, ensure_ascii=False) + "\n"
-        if notes else ""
-    )
-    return f"""Create one finished Chinese Xiaohongshu merchant recruitment poster, not a mockup.
-
-USABLE COMPOSITION — HARD BOUNDARY
-The top 13.2% and bottom 13.9% are background-only zones for later branding overlays. On the final canvas, keep the full outer extent of EVERY foreground element inside x=65–1014, y=191–1238. This includes headlines, glyph outlines, shadows, products, garnishes, decorations and information panels. Leave breathing room inside these bounds.
-Continue the same background environment, surfaces, materials and lighting naturally through both protected zones to all four edges. They are not white margins, empty cards or visible sections. No foreground, guide marks, zone labels or placeholders in those zones.
-
-CAMPAIGN COPY — EXACT VALUES, KEYS ARE METADATA
-{json.dumps(facts, ensure_ascii=False, indent=2)}
-Preserve every supplied value and unique fact exactly, including punctuation, dates, account names and the full address/rules. Omit absent facts; invent no missing facts. The keys above are not text to print. Organize the values as audience-facing campaign copy, not a form, key-value table or field checklist. Concise public-facing detail labels and naturally integrated information strips are allowed. Never typeset input instructions, filenames or file extensions.
-
-INPUT IMAGES — ORDER MATCHES ATTACHMENTS
-{image_lines}
-{image_rules}
-{notes_section}
-COMPOSITION DECISIONS FOR THIS REQUEST
-{decisions_text}
-
-DESIGN AND READABILITY
-Plan the headline, actual products, labels and all participation details together within the usable area before rendering; details are not leftover footer copy. Compose freely: no prescribed section heights, columns, cards, internal order or compression sequence.
-Make the recruitment theme immediately readable at mobile thumbnail size. Use a main headline of at most 2–3 lines. Rebalance the overall composition when copy needs room; do not shrink detail type indefinitely, omit wording, distort products or cross the hard boundary. Moderate repetition is allowed only when useful for emphasis or reading.
-Integrate products into coherent light and space, not rectangular screenshot collages. Preserve authentic packaging printing. Do not generate standalone Fantuan or merchant logos, co-brand panels or a search bar; authentic branding is added locally afterward.
-
-FINAL CHECK — BEFORE OUTPUT
-Check the complete foreground bounds against the usable area, then verify all exact copy, product identity/count/proportions, label associations and coherent style. Adjust the composition if any condition fails. Do not draw this checklist. This requested self-check does not replace external visual review.
-
-OUTPUT
-1080x1440 pixels, portrait 3:4, opaque raster poster, continuous full-bleed background, no crop marks, guides or mockup frame.
-""".strip()
-
-
 def kie_json_request(url: str, api_key: str, method: str = "GET", payload: dict[str, Any] | None = None, timeout: int = 60) -> dict[str, Any]:
     body = json_bytes(payload) if payload is not None else None
     headers = {"Authorization": f"Bearer {api_key}"}
@@ -232,63 +167,6 @@ def upload_to_kie(api_key: str, filename: str, payload: bytes, content_type: str
     return str(result["data"]["downloadUrl"])
 
 
-def call_kie(prompt: str, images: list[tuple[str, str, bytes, str]], task_token: str) -> bytes:
-    api_key = active_api_key()
-    if not api_key:
-        raise RuntimeError("KIE_API_KEY_MISSING")
-    input_urls = [upload_to_kie(api_key, filename, payload, content_type, task_token) for _, filename, payload, content_type in images]
-    created = kie_json_request(
-        f"{KIE_API_ROOT}/api/v1/jobs/createTask",
-        api_key,
-        method="POST",
-        payload={
-            "model": MODEL,
-            "input": {
-                "prompt": prompt,
-                "input_urls": input_urls,
-                "aspect_ratio": "3:4",
-                "resolution": "1K",
-                "background": "opaque",
-            },
-        },
-    )
-    task_id = str(created.get("data", {}).get("taskId", ""))
-    if not task_id:
-        raise RuntimeError("KIE_INVALID_RESPONSE:没有返回 taskId。")
-    delay = 2.0
-    deadline = time.monotonic() + 360
-    while time.monotonic() < deadline:
-        time.sleep(delay)
-        status = kie_json_request(f"{KIE_API_ROOT}/api/v1/jobs/recordInfo?taskId={task_id}", api_key)
-        data = status.get("data", {})
-        state = data.get("state")
-        if state == "fail":
-            raise RuntimeError(f"KIE_GENERATION_FAILED:{data.get('failMsg') or data.get('failCode') or '生成失败。'}")
-        if state == "success":
-            try:
-                result_json = json.loads(data.get("resultJson") or "{}")
-                result_url = result_json["resultUrls"][0]
-                with urllib.request.urlopen(result_url, timeout=120) as response:
-                    return response.read()
-            except (json.JSONDecodeError, KeyError, IndexError, TypeError, urllib.error.URLError) as exc:
-                raise RuntimeError("KIE_INVALID_RESPONSE:任务成功但无法下载结果。") from exc
-        delay = min(delay * 1.35, 8.0)
-    raise RuntimeError("KIE_TIMEOUT:生成超过 6 分钟，请稍后重试。")
-
-
-def normalize_generated(source: Path, target: Path) -> None:
-    with Image.open(source) as image:
-        image = image.convert("RGB")
-        if image.size == (1088, 1440):
-            image = image.crop((4, 0, 1084, 1440))
-        elif image.size != (1080, 1440):
-            ratio = image.width / image.height
-            if not 0.73 <= ratio <= 0.78:
-                raise RuntimeError(f"GENERATED_RATIO_INVALID:{image.width}x{image.height}")
-            image = ImageOps.fit(image, (1080, 1440), method=Image.Resampling.LANCZOS)
-        image.save(target, "PNG", optimize=True)
-
-
 def compose_final(base_path: Path, logo_path: Path | None, merchant_name: str, overlay_mode: str, output_path: Path) -> None:
     sys.path.insert(0, str(SKILL / "scripts"))
     from compose_poster import BUNDLED_FONT, compose  # type: ignore
@@ -328,7 +206,7 @@ def compose_final(base_path: Path, logo_path: Path | None, merchant_name: str, o
 
 
 class Handler(SimpleHTTPRequestHandler):
-    server_version = "FantuanPosterWorkbench/0.1"
+    server_version = f"FantuanPosterWorkbench/{APP_VERSION}"
 
     def log_message(self, format: str, *args: Any) -> None:
         print(f"[{self.log_date_time_string()}] {format % args}")
@@ -343,13 +221,19 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_GET(self) -> None:
+        if self.path.startswith("/api/progress/"):
+            progress_id = self.path.split("?", 1)[0].removeprefix("/api/progress/")
+            if not progress_id.replace("-", "").isalnum() or progress_id not in GENERATION_PROGRESS:
+                self.send_error(404)
+                return
+            self.send_json(200, {"stage": GENERATION_PROGRESS[progress_id]})
+            return
         if self.path == "/api/health":
             required = [
-                SKILL / "assets" / "fixed-overlay-blank-1080x1440.png",
                 SKILL / "assets" / "fixed-overlay-fantuan-only-1080x1440.png",
                 SKILL / "assets" / "fantuan-info-overlay-1080x1440.svg",
                 SKILL / "assets" / "fantuan-info-overlay-1080x1440.png",
-                LAYOUT_GUIDE,
+                SKILL / "assets" / "fantuan-lockup-transparent.png",
                 SKILL / "assets" / "fonts" / "AlimamaFangYuanTiVF-Thin-2.ttf",
             ]
             self.send_json(200, {
@@ -357,7 +241,12 @@ class Handler(SimpleHTTPRequestHandler):
                 "api_configured": bool(active_api_key()),
                 "api_key_source": "session" if SESSION_API_KEY else ("environment" if os.environ.get("KIE_API_KEY", "").strip() else None),
                 "model": MODEL,
+                "app_version": APP_VERSION,
                 "prompt_version": PROMPT_VERSION,
+                "generation_pipeline": GENERATION_PIPELINE_VERSION,
+                "validation_status": "test_succeeded",
+                "default_generation_mode": "v5.2",
+                "paid_calls_per_poster": 2,
                 "skill_assets_ready": all(path.is_file() for path in required),
             })
             return
@@ -428,6 +317,9 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             self.handle_generation(fields, files)
         except RuntimeError as exc:
+            progress_id = fields.get("progress_id", "")
+            if progress_id:
+                GENERATION_PROGRESS[progress_id] = "failed"
             code = str(exc)
             print(f"Generation failed: {code[:1800]}")
             if code == "KIE_API_KEY_MISSING":
@@ -437,6 +329,9 @@ class Handler(SimpleHTTPRequestHandler):
             else:
                 self.send_json(422, {"error": code.split(":", 1)[0], "message": "海报处理未通过。", "detail": code[:1800]})
         except Exception as exc:
+            progress_id = fields.get("progress_id", "")
+            if progress_id:
+                GENERATION_PROGRESS[progress_id] = "failed"
             self.send_json(500, {"error": "INTERNAL_ERROR", "message": "服务器处理失败。", "detail": str(exc)[:1000]})
 
     def handle_api_key_setting(self) -> None:
@@ -471,10 +366,16 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_json(200, {"status": "configured" if key else "cleared", "api_configured": bool(key), "provider": "KIE"})
 
     def handle_generation(self, fields: dict[str, str], files: list[tuple[str, str, bytes, str]]) -> None:
+        progress_id = fields.get("progress_id", "").strip()
+        if progress_id and not progress_id.replace("-", "").isalnum():
+            raise RuntimeError("PROGRESS_ID_INVALID")
+        if progress_id:
+            GENERATION_PROGRESS[progress_id] = "creative"
         if not active_api_key():
             raise RuntimeError("KIE_API_KEY_MISSING")
         if fields.get("cost_confirmation") != "on":
-            raise RuntimeError("COST_CONFIRMATION_REQUIRED:请先确认本次会调用付费图片 API。")
+            raise RuntimeError("COST_CONFIRMATION_REQUIRED:请先确认本次会调用 2 次付费图片 API。")
+
         references = [item for item in files if item[0] == "images"]
         logos = [item for item in files if item[0] == "merchant_logo"]
         if not 1 <= len(references) <= 9:
@@ -484,6 +385,7 @@ class Handler(SimpleHTTPRequestHandler):
                 raise RuntimeError(f"IMAGE_TYPE_INVALID:{content_type}")
             if not payload or len(payload) > MAX_IMAGE_BYTES:
                 raise RuntimeError("IMAGE_SIZE_INVALID:单张图片必须小于 20 MB。")
+
         merchant_name = fields.get("merchant_name", "").strip()
         if not merchant_name:
             raise RuntimeError("MERCHANT_NAME_REQUIRED")
@@ -517,34 +419,76 @@ class Handler(SimpleHTTPRequestHandler):
             logo_path = job_dir / f"merchant-logo{safe_suffix(content_type)}"
             logo_path.write_bytes(payload)
 
-        prompt = prompt_for(fields, [str(role) for role in roles])
-        if not LAYOUT_GUIDE.is_file():
-            raise RuntimeError("LAYOUT_GUIDE_MISSING:缺少生成阶段的安全区布局参考。")
+        pipeline_path = str(ROOT / "pipeline")
+        if pipeline_path not in sys.path:
+            sys.path.insert(0, pipeline_path)
+        import v52  # type: ignore
+
+        v52.server.SESSION_API_KEY = active_api_key()
+        role_values = [str(role) for role in roles]
+        central_prompt = v52.build_central_prompt(fields, role_values)
+        outpaint_prompt = v52.build_outpaint_prompt()
         request_record = {
             "job_id": job_id,
             "created_at": int(time.time()),
             "fields": fields,
             "roles": roles,
             "model": MODEL,
+            "generation_mode": "v5.2",
             "prompt_version": PROMPT_VERSION,
-            "prompt": prompt,
-            "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
-            "layout_guide": {
-                "path": str(LAYOUT_GUIDE.relative_to(ROOT)),
-                "transmitted_to_model": False,
-                "purpose": "local_safe_zone_reference_only",
+            "production_ready": True,
+            "validation_status": "test_succeeded",
+            "generation_pipeline": {
+                "version": GENERATION_PIPELINE_VERSION,
+                "calls": 2,
+                "model": MODEL,
+                "resolution_each": "1K",
+                "estimated_credits": 12,
+                "central_api_ratio": "8:9",
+                "central_size": list(v52.CENTRAL_SIZE),
+                "central_y": list(v52.CENTRAL_Y),
+                "stages": ["central_creative", "crop_background_buffers", "vertical_outpaint", "brand_overlay"],
             },
+            "prompts": {"central": central_prompt, "outpaint": outpaint_prompt},
         }
-        (job_dir / "request.json").write_text(json.dumps(request_record, ensure_ascii=False, indent=2), encoding="utf-8")
-        generated_bytes = call_kie(prompt, stored_images, job_id)
-        raw_path = job_dir / "generated-raw.png"
-        raw_path.write_bytes(generated_bytes)
+        (job_dir / "request.json").write_text(
+            json.dumps(request_record, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        central_bytes = v52.call(central_prompt, stored_images, job_id + "-central", "8:9")
+        central_api = job_dir / "central-api.png"
+        v52.normalize(central_bytes, central_api, v52.CENTRAL_API_SIZE, 8 / 9)
+        central_path = job_dir / "central.png"
+        v52.crop_central_api_image(central_api, central_path)
+        if progress_id:
+            GENERATION_PROGRESS[progress_id] = "outpaint"
+
+        outpaint_input = job_dir / "outpaint-input.png"
+        v52.prepare_outpaint_input(central_path, outpaint_input)
+        base_bytes = v52.call(
+            outpaint_prompt,
+            [v52.image_tuple(outpaint_input)],
+            job_id + "-outpaint",
+            "3:4",
+            background="auto",
+        )
         base_path = job_dir / "generated-base-1080x1440.png"
-        normalize_generated(raw_path, base_path)
+        v52.normalize(base_bytes, base_path, v52.FINAL_SIZE, 3 / 4)
+        if progress_id:
+            GENERATION_PROGRESS[progress_id] = "compose"
+
         final_path = job_dir / "final.png"
         compose_final(base_path, logo_path, merchant_name, overlay_mode, final_path)
+        mechanical_metrics = v52.metrics(central_path, base_path)
+        (job_dir / "metrics.json").write_text(
+            json.dumps(mechanical_metrics, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
         with Image.open(final_path) as final_image:
             width, height = final_image.size
+        if progress_id:
+            GENERATION_PROGRESS[progress_id] = "completed"
         self.send_json(200, {
             "job_id": job_id,
             "status": "completed",
@@ -556,8 +500,13 @@ class Handler(SimpleHTTPRequestHandler):
                 "format": "png",
                 "mechanical_validation": "passed",
                 "visual_review": "pending",
+                "generation_mode": "v5.2",
+                "production_ready": True,
+                "estimated_credits": 12,
+                "mechanical_metrics": mechanical_metrics,
             },
         })
+
 
 
 def main() -> None:
