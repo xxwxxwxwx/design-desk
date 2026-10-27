@@ -12,7 +12,7 @@ description: Create one final 1080×1440 Fantuan Xiaohongshu merchant recruitmen
 - 1–9 张“真实产品”或“风格参考”图片。
 - 商家 Logo 单独输入，不占素材额度，也不发送给图片模型。
 - 商家名、招募类型、人数、时间、地址、体验内容和报名规则。
-- `overlay_mode` 为 `co_brand` 或 `fantuan_only`；联名模式必须提供真实商家 Logo。
+- `overlay_mode` 为 `co_brand` 或 `fantuan_only`；联名模式必须提供真实商家 Logo。联名合成会先按透明内容边界（白底仅在边缘证据充分时）取得有效宽高比：大于等于 `1.5` 使用横版模板，小于 `1.5` 使用竖版模板；仅饭团模式不参与判断。
 
 真实产品必须保留身份、容器、包装、数量、比例和识别特征。风格参考只迁移视觉语言，不得带入其产品、商家身份、价格、Logo、旧文案或活动事实。
 

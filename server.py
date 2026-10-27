@@ -170,11 +170,26 @@ def upload_to_kie(api_key: str, filename: str, payload: bytes, content_type: str
 
 def compose_final(base_path: Path, logo_path: Path | None, merchant_name: str, overlay_mode: str, output_path: Path) -> None:
     sys.path.insert(0, str(SKILL / "scripts"))
-    from compose_poster import BUNDLED_FONT, compose  # type: ignore
+    from compose_poster import (  # type: ignore
+        BUNDLED_FONT,
+        LOGO_TEMPLATE_ASPECT_THRESHOLD,
+        co_brand_template_variant,
+        compose,
+    )
 
     if overlay_mode == "co_brand":
-        template_svg = SKILL / "assets" / "fantuan-info-overlay-1080x1440.svg"
-        template = SKILL / "assets" / "fantuan-info-overlay-1080x1440.png"
+        if logo_path is None:
+            raise ValueError("联名模式缺少商家 Logo。")
+        variant, aspect, crop_method, content_size = co_brand_template_variant(logo_path)
+        suffix = "" if variant == "horizontal" else "-vertical"
+        template_svg = SKILL / "assets" / f"fantuan-info-overlay{suffix}-1080x1440.svg"
+        template = SKILL / "assets" / f"fantuan-info-overlay{suffix}-1080x1440.png"
+        print(
+            "[brand-overlay] "
+            f"template_selected={variant} content_aspect_ratio={aspect:.4f} "
+            f"threshold={LOGO_TEMPLATE_ASPECT_THRESHOLD:.1f} crop_method={crop_method} "
+            f"content_size={content_size[0]}x{content_size[1]}"
+        )
     else:
         template_svg = SKILL / "assets" / "fantuan-only-info-overlay-1080x1440.svg"
         template = SKILL / "assets" / "fantuan-only-info-overlay-1080x1440.png"
@@ -282,6 +297,8 @@ class Handler(SimpleHTTPRequestHandler):
                 SKILL / "assets" / "fantuan-only-info-overlay-1080x1440.png",
                 SKILL / "assets" / "fantuan-info-overlay-1080x1440.svg",
                 SKILL / "assets" / "fantuan-info-overlay-1080x1440.png",
+                SKILL / "assets" / "fantuan-info-overlay-vertical-1080x1440.svg",
+                SKILL / "assets" / "fantuan-info-overlay-vertical-1080x1440.png",
                 SKILL / "assets" / "fantuan-lockup-transparent.png",
                 SKILL / "assets" / "fonts" / "AlimamaFangYuanTiVF-Thin-2.ttf",
             ]

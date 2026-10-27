@@ -6,6 +6,8 @@ v5.2 的品牌资产由本地程序确定性合成。
 
 - `assets/fantuan-info-overlay-1080x1440.svg`
 - `assets/fantuan-info-overlay-1080x1440.png`
+- `assets/fantuan-info-overlay-vertical-1080x1440.svg`
+- `assets/fantuan-info-overlay-vertical-1080x1440.png`
 - `assets/fantuan-only-info-overlay-1080x1440.svg`
 - `assets/fantuan-only-info-overlay-1080x1440.png`
 - `assets/fantuan-lockup-transparent.png`

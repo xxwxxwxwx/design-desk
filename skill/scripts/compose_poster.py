@@ -16,14 +16,7 @@ except ImportError as exc:  # pragma: no cover - environment guidance
 
 SIZE = (1080, 1440)
 NAME_BACKGROUND = (20, 193, 193, 255)
-HEADER_CLEAR_HEIGHT = 160
-HEADER_PANEL_HEIGHT = 148
-HEADER_RADIUS = 36
-HEADER_PADDING_X = 42
-HEADER_CONTENT_GAP = 20
-MERCHANT_LOGO_MAX_WIDTH = 260
-MERCHANT_LOGO_MAX_HEIGHT = 64
-FANTUAN_LOCKUP = Path(__file__).resolve().parents[1] / "assets" / "fantuan-lockup-transparent.png"
+LOGO_TEMPLATE_ASPECT_THRESHOLD = 1.5
 PREVIEW_FONT = Path("/System/Library/Fonts/PingFang.ttc")
 PREVIEW_FONT_INDEX = 8
 NAME_FONT_SIZE = 32
@@ -101,15 +94,16 @@ def validate_template(overlay: Image.Image) -> None:
         raise ValueError("固定模板的中区不是全透明，不能安全叠加。")
 
 
-def crop_logo_artwork(logo: Image.Image) -> Image.Image:
-    """裁掉透明边和纯白画布边，不改变 Logo 内部的白色。"""
+def crop_logo_artwork(logo: Image.Image) -> tuple[Image.Image, str]:
+    """优先按透明通道裁边；仅在边缘证据充分时谨慎裁纯白画布。"""
     alpha_bounds = logo.getchannel("A").getbbox()
     if alpha_bounds is None:
         raise ValueError("商家 Logo 全透明。")
-    logo = logo.crop(alpha_bounds)
+    if alpha_bounds != (0, 0, logo.width, logo.height):
+        return logo.crop(alpha_bounds), "alpha"
 
-    # 很多商家上传的是带大块白边的 JPG/PNG。白色与面板同色，
-    # 只裁四周近白区域；彩色底、深色底和 Logo 内部留白保持原样。
+    # 对无透明通道的 JPG/PNG，只在四角、边框与非白内容三项证据同时满足时裁白底。
+    # 这样不会仅凭白色四角误删白色 Logo 或品牌本身的留白。
     rgba = logo.load()
     corners = [
         rgba[0, 0],
@@ -118,7 +112,16 @@ def crop_logo_artwork(logo: Image.Image) -> Image.Image:
         rgba[logo.width - 1, logo.height - 1],
     ]
     near_white_corners = sum(1 for r, g, b, a in corners if a >= 250 and min(r, g, b) >= 245)
-    if near_white_corners >= 3:
+    border = (
+        [rgba[x, 0] for x in range(logo.width)]
+        + [rgba[x, logo.height - 1] for x in range(logo.width)]
+        + [rgba[0, y] for y in range(1, logo.height - 1)]
+        + [rgba[logo.width - 1, y] for y in range(1, logo.height - 1)]
+    )
+    near_white_border_ratio = sum(
+        1 for r, g, b, a in border if a >= 250 and min(r, g, b) >= 245
+    ) / len(border)
+    if near_white_corners == 4 and near_white_border_ratio >= 0.975:
         mask = Image.new("L", logo.size, 0)
         mask_pixels = mask.load()
         for y in range(logo.height):
@@ -127,21 +130,22 @@ def crop_logo_artwork(logo: Image.Image) -> Image.Image:
                 if a > 8 and min(r, g, b) < 242:
                     mask_pixels[x, y] = 255
         content_bounds = mask.getbbox()
-        if content_bounds is not None:
-            logo = logo.crop(content_bounds)
-    return logo
+        if content_bounds is not None and content_bounds != (0, 0, logo.width, logo.height):
+            content_area = (content_bounds[2] - content_bounds[0]) * (content_bounds[3] - content_bounds[1])
+            if content_area >= logo.width * logo.height * 0.01:
+                return logo.crop(content_bounds), "white-background"
+    return logo, "canvas"
 
 
-def merchant_logo_box(logo: Image.Image) -> tuple[int, int]:
-    """按宽高比约束视觉份量：窄 Logo 不与饭团主标等高，超宽 Logo 不无限拉长面板。"""
-    aspect = logo.width / logo.height
-    if aspect < 0.85:
-        return (58, MERCHANT_LOGO_MAX_HEIGHT)
-    if aspect < 1.4:
-        return (72, MERCHANT_LOGO_MAX_HEIGHT)
-    if aspect > 4.0:
-        return (MERCHANT_LOGO_MAX_WIDTH, 52)
-    return (MERCHANT_LOGO_MAX_WIDTH, 60)
+def logo_content_metrics(logo_path: Path) -> tuple[float, str, tuple[int, int]]:
+    logo, crop_method = crop_logo_artwork(Image.open(logo_path).convert("RGBA"))
+    return logo.width / logo.height, crop_method, logo.size
+
+
+def co_brand_template_variant(logo_path: Path, threshold: float = LOGO_TEMPLATE_ASPECT_THRESHOLD) -> tuple[str, float, str, tuple[int, int]]:
+    aspect, crop_method, size = logo_content_metrics(logo_path)
+    variant = "horizontal" if aspect >= threshold else "vertical"
+    return variant, aspect, crop_method, size
 
 
 def compose(
@@ -172,9 +176,7 @@ def compose(
     name_text_box = slot_box(template_svg_path, "merchant-name-slot")
     draw = ImageDraw.Draw(overlay)
     if logo_path is not None:
-        if not FANTUAN_LOCKUP.is_file():
-            raise ValueError(f"缺少饭团顶部矢量派生资源：{FANTUAN_LOCKUP}")
-        draw.rectangle((0, 0, SIZE[0], HEADER_CLEAR_HEIGHT), fill=(0, 0, 0, 0))
+        logo_box = slot_box(template_svg_path, "merchant-logo-slot")
     # SVG rect 的右、下边界为排他终点；Pillow rectangle 的终点则会被绘制。
     # 减 1 保证动态底色不会多覆盖固定模板边界像素。
     draw.rectangle(
@@ -183,26 +185,14 @@ def compose(
     )
 
     if logo_path is not None:
-        logo = crop_logo_artwork(Image.open(logo_path).convert("RGBA"))
+        logo, _ = crop_logo_artwork(Image.open(logo_path).convert("RGBA"))
         logo = ImageOps.contain(
             logo,
-            merchant_logo_box(logo),
+            (logo_box[2] - logo_box[0], logo_box[3] - logo_box[1]),
             Image.Resampling.LANCZOS,
         )
-        lockup = Image.open(FANTUAN_LOCKUP).convert("RGBA")
-        panel_width = HEADER_PADDING_X * 2 + lockup.width + HEADER_CONTENT_GAP + logo.width
-        panel_left = (SIZE[0] - panel_width) // 2
-        panel_right = panel_left + panel_width
-        draw.rounded_rectangle(
-            (panel_left, -HEADER_RADIUS, panel_right, HEADER_PANEL_HEIGHT),
-            radius=HEADER_RADIUS,
-            fill=(255, 255, 255, 255),
-        )
-        lockup_x = panel_left + HEADER_PADDING_X
-        lockup_y = (HEADER_PANEL_HEIGHT - lockup.height) // 2
-        overlay.alpha_composite(lockup, (lockup_x, lockup_y))
-        logo_x = lockup_x + lockup.width + HEADER_CONTENT_GAP
-        logo_y = (HEADER_PANEL_HEIGHT - logo.height) // 2
+        logo_x = logo_box[0] + (logo_box[2] - logo_box[0] - logo.width) // 2
+        logo_y = logo_box[1] + (logo_box[3] - logo_box[1] - logo.height) // 2
         overlay.alpha_composite(logo, (logo_x, logo_y))
 
     name = merchant_name.strip()
