@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "name": "create-fantuan-xiaohongshu-recruitment-poster",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "input": {
     "reference_images": {"min": 1, "max": 9, "types": ["image/png", "image/jpeg", "image/webp"]},
     "merchant_logo": {"separate_asset": true, "required_when": "overlay_mode=co_brand"},

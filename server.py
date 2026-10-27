@@ -52,7 +52,7 @@ KIE_API_ROOT = "https://api.kie.ai"
 KIE_UPLOAD_URL = "https://kieai.redpandaai.co/api/file-stream-upload"
 PROMPT_VERSION = "2026-10-22-svg-exact-central-outpaint-v5.2"
 GENERATION_PIPELINE_VERSION = "2026-10-22-sunburst-central-outpaint-v5.2"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 SESSION_API_KEY = ""
 GENERATION_PROGRESS: dict[str, str] = {}
 
