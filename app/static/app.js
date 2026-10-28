@@ -3,11 +3,23 @@ const imageInput = document.querySelector('#images');
 const assetGrid = document.querySelector('#assetGrid');
 const assetCount = document.querySelector('#assetCount');
 const dropzone = document.querySelector('#dropzone');
+const dropzoneTitle = document.querySelector('#dropzoneTitle');
 const overlayMode = document.querySelector('#overlayMode');
 const logoField = document.querySelector('#logoField');
 const merchantLogo = document.querySelector('#merchantLogo');
 const merchantName = document.querySelector('#merchantName');
 const merchantNameHint = document.querySelector('#merchantNameHint');
+const workbenchMode = document.querySelector('#workbenchMode');
+const modeTabs = [...document.querySelectorAll('.mode-tab[data-mode]')];
+const standardFields = document.querySelector('#standardFields');
+const freeFields = document.querySelector('#freeFields');
+const creationMethodField = document.querySelector('#creationMethodField');
+const introCopy = document.querySelector('#introCopy');
+const assetHelp = document.querySelector('#assetHelp');
+const freeMerchantName = form.elements.free_merchant_name;
+const freeHeadline = form.elements.free_headline;
+const freeSubtitle = form.elements.free_subtitle;
+const additionalNotes = document.querySelector('#additionalNotes');
 const apiState = document.querySelector('#apiState');
 const button = document.querySelector('#generateButton');
 const emptyPreview = document.querySelector('#emptyPreview');
@@ -29,30 +41,61 @@ const clearKey = document.querySelector('#clearKey');
 const closeKeyDialog = document.querySelector('#closeKeyDialog');
 
 let assets = [];
+let freeCreationBackendReady = false;
 const MERCHANT_NAME_MAX_CHARS = 10;
 const roles = [
   ['product', '真实产品'], ['style_reference', '风格参考']
 ];
 
 function validateMerchantName() {
-  const count = Array.from(merchantName.value).length;
+  const activeName = workbenchMode.value === 'free_creation' ? freeMerchantName : merchantName;
+  const activeHint = workbenchMode.value === 'free_creation' ? document.querySelector('#freeMerchantNameHint') : merchantNameHint;
+  const count = Array.from(activeName.value).length;
   const overflow = count > MERCHANT_NAME_MAX_CHARS;
-  merchantName.setCustomValidity(overflow ? `商家名称最多填写 ${MERCHANT_NAME_MAX_CHARS} 个字符。` : '');
-  merchantName.classList.toggle('invalid', overflow);
-  merchantNameHint.textContent = overflow
+  activeName.setCustomValidity(overflow ? `商家名称最多填写 ${MERCHANT_NAME_MAX_CHARS} 个字符。` : '');
+  activeName.classList.toggle('invalid', overflow);
+  activeHint.textContent = overflow
     ? `已输入 ${count} 个字符，请删减至 ${MERCHANT_NAME_MAX_CHARS} 个以内`
     : `${count} / ${MERCHANT_NAME_MAX_CHARS} 个字符`;
-  merchantNameHint.classList.toggle('field-error', overflow);
+  activeHint.classList.toggle('field-error', overflow);
   return !overflow;
 }
 
 merchantName.addEventListener('input', validateMerchantName);
+freeMerchantName.addEventListener('input', validateMerchantName);
 validateMerchantName();
+
+function syncWorkbenchMode(mode) {
+  if (mode === 'size_adaptation') return;
+  const free = mode === 'free_creation';
+  workbenchMode.value = mode;
+  standardFields.hidden = free;
+  freeFields.hidden = !free;
+  standardFields.querySelectorAll('input,select,textarea').forEach(control => { control.disabled = free; });
+  freeFields.querySelectorAll('input,select,textarea').forEach(control => { control.disabled = !free; });
+  creationMethodField.hidden = !free;
+  merchantName.required = !free;
+  form.elements.recruitment_type.required = !free;
+  freeMerchantName.required = free;
+  freeHeadline.required = free;
+  introCopy.textContent = free
+    ? '输入标题并按需上传产品或视觉参考，系统会自由设计主视觉并自动合成饭团固定信息条。'
+    : '上传素材、填写活动信息，系统会生成主视觉，并自动合成饭团固定信息条。';
+  assetHelp.textContent = free
+    ? '产品素材选填；选择“视觉参考创作”时，必须至少上传并标记一张风格参考图。'
+    : '上传菜品、饮品、环境或风格参考。商家 Logo 在下方单独上传。';
+  modeTabs.forEach(tab => tab.classList.toggle('active', tab.dataset.mode === mode));
+  syncAssetMode();
+  validateMerchantName();
+}
+modeTabs.forEach(tab => tab.addEventListener('click', () => syncWorkbenchMode(tab.dataset.mode)));
+syncWorkbenchMode('standard');
 
 async function checkHealth() {
   try {
     const response = await fetch('/api/health', {cache: 'no-store'});
     const data = await response.json();
+    freeCreationBackendReady = Boolean(data.free_creation_prompt_version);
     if (data.api_configured && data.skill_assets_ready) {
       apiState.className = 'api-state ready';
       apiState.innerHTML = '<span></span>生成服务已就绪';
@@ -108,21 +151,47 @@ function addFiles(fileList) {
 }
 
 function renderAssets() {
+  const aiFreestyle = workbenchMode.value === 'free_creation' && form.elements.creation_method.value === 'ai_free';
   assetGrid.innerHTML = '';
   assets.forEach((asset, index) => {
+    if (aiFreestyle) asset.role = 'product';
     const card = document.createElement('div');
     card.className = 'asset-card';
     const options = roles.map(([value, label]) => `<option value="${value}" ${asset.role === value ? 'selected' : ''}>${label}</option>`).join('');
-    card.innerHTML = `<img src="${asset.url}" alt="素材 ${index + 1}"><button type="button" aria-label="删除素材 ${index + 1}">×</button><select aria-label="素材 ${index + 1} 的用途">${options}</select>`;
+    const roleControl = aiFreestyle
+      ? '<span class="asset-fixed-role">真实产品</span>'
+      : `<select aria-label="素材 ${index + 1} 的用途">${options}</select>`;
+    card.innerHTML = `<img src="${asset.url}" alt="素材 ${index + 1}"><button type="button" aria-label="删除素材 ${index + 1}">×</button>${roleControl}`;
     card.querySelector('button').addEventListener('click', () => {
       URL.revokeObjectURL(asset.url); assets.splice(index, 1); renderAssets();
     });
-    card.querySelector('select').addEventListener('change', event => { asset.role = event.target.value; });
+    const roleSelect = card.querySelector('select');
+    if (roleSelect) roleSelect.addEventListener('change', event => { asset.role = event.target.value; });
     assetGrid.append(card);
   });
   assetCount.textContent = `${assets.length} / 9`;
   imageInput.value = '';
 }
+
+function syncAssetMode() {
+  const free = workbenchMode.value === 'free_creation';
+  const aiFreestyle = free && form.elements.creation_method.value === 'ai_free';
+  if (aiFreestyle) assets.forEach(asset => { asset.role = 'product'; });
+  dropzoneTitle.textContent = aiFreestyle ? '上传产品图' : '选择或拖入图片';
+  assetHelp.textContent = aiFreestyle
+    ? '产品图片选填；上传后全部作为真实产品素材，不使用视觉参考图。无图时 AI 将根据文字自主生成产品视觉。'
+    : free
+      ? '每张图片可标记为真实产品或风格参考；至少需要一张风格参考图，产品图片选填。'
+      : '上传菜品、饮品、环境或风格参考。商家 Logo 在下方单独上传。';
+  additionalNotes.placeholder = free
+    ? '可填写产品名称、希望展示的信息或视觉要求，例如：突出新品、年轻活泼、夏日氛围等。不填写视觉要求时，AI 将自主设计。'
+    : '例如：产品一主两辅；时间先留空';
+  renderAssets();
+}
+
+document.querySelectorAll('input[name="creation_method"]').forEach(input => {
+  input.addEventListener('change', syncAssetMode);
+});
 
 imageInput.addEventListener('change', event => addFiles(event.target.files));
 ['dragenter', 'dragover'].forEach(name => dropzone.addEventListener(name, event => {event.preventDefault(); dropzone.classList.add('drag');}));
@@ -197,15 +266,32 @@ form.addEventListener('submit', async event => {
   document.querySelectorAll('.invalid').forEach(el => el.classList.remove('invalid'));
   validateMerchantName();
   if (!form.checkValidity()) { form.reportValidity(); return; }
-  if (assets.length < 1) { dropzone.classList.add('invalid'); showError('请至少上传 1 张真实产品或参考图片。'); return; }
+  const free = workbenchMode.value === 'free_creation';
+  const creationMethod = form.elements.creation_method.value;
+  if (free && !freeCreationBackendReady) {
+    showError('当前后端尚未加载自由创作 V1。请重启本地工作台后再试，本次未发起图片 API 调用。');
+    return;
+  }
+  if (!free && assets.length < 1) { dropzone.classList.add('invalid'); showError('请至少上传 1 张真实产品或参考图片。'); return; }
+  if (free && creationMethod === 'style_reference' && !assets.some(asset => asset.role === 'style_reference')) {
+    dropzone.classList.add('invalid'); showError('视觉参考创作需要至少一张标记为“风格参考”的图片。'); return;
+  }
   if (overlayMode.value === 'co_brand' && !merchantLogo.files[0]) { merchantLogo.classList.add('invalid'); showError('联名模式需要上传真实商家 Logo。'); return; }
 
   const data = new FormData(form);
+  if (free) {
+    data.set('merchant_name', freeMerchantName.value);
+    data.set('headline', freeHeadline.value);
+    data.set('subtitle', freeSubtitle.value);
+  }
   const progressId = crypto.randomUUID();
   data.set('progress_id', progressId);
   data.delete('images');
   assets.forEach(asset => data.append('images', asset.file, asset.file.name));
-  data.set('image_roles', JSON.stringify(assets.map(asset => asset.role)));
+  const submittedRoles = free && creationMethod === 'ai_free'
+    ? assets.map(() => 'product')
+    : assets.map(asset => asset.role);
+  data.set('image_roles', JSON.stringify(submittedRoles));
   setWorking(true);
   showGenerationStage('creative');
   const progressController = new AbortController();

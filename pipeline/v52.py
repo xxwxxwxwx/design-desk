@@ -27,6 +27,16 @@ CENTRAL_Y = (160, 1315)
 MODEL = "gpt-image-2-5-sunburst-image-to-image"
 RESOLUTION = "1K"
 
+FREE_PRODUCT_ROLE_RULE = """PRODUCT IMAGE — CONTENT AND VISUAL CONTEXT
+Treat each PRODUCT image primarily as an authoritative reference for the product itself.
+Preserve its recognizable appearance, packaging, container, proportions, colors and distinctive product details.
+The surrounding visual environment may provide secondary inspiration for palette, lighting, materials and atmosphere.
+Do not automatically reproduce the original background, composition or poster layout, including when the source has a white, transparent or designed background.
+Do not transfer unrelated text, logos, prices, promotional claims, campaign information or other marketing content from PRODUCT images.
+Distinguish the real product subject from surrounding decoration and commercial design elements.
+In AI FREESTYLE mode, use any source atmosphere only as secondary inspiration and independently develop the final creative direction. A white or transparent product background must not cause a generic white-background product display.
+In STYLE REFERENCE mode, prioritize the explicit STYLE_REFERENCE for visual art direction while preserving authentic PRODUCT appearance. If they conflict, PRODUCT controls product truth and STYLE_REFERENCE controls overall visual language."""
+
 
 def image_tuple(path: Path) -> tuple[str, str, bytes, str]:
     content_type = mimetypes.guess_type(path.name)[0] or "image/png"
@@ -74,6 +84,91 @@ CREATIVE DIRECTION
 - Keep the complete outer panel, including border, glow and shadow, above the lower crop buffer and leave visible background breathing room below it. Adapt its styling to the supplied reference, but do not change this one-panel / three-row information structure.
 - The image model owns the panel's visual design and typography. The program must not re-typeset, split, shorten or rearrange the activity text.
 - Make the recruitment theme, headline and products legible at mobile thumbnail size.
+- Leave the scene visually extendable above and below without bands, borders, inner frames or abrupt horizontal boundaries.
+
+PRODUCTION NOTES
+{json.dumps(notes, ensure_ascii=False)}
+
+OUTPUT
+One opaque 8:9 raster creative plate. No logos, mockup frame, crop marks or guides.""".strip()
+
+
+def build_free_creation_prompt(fields: dict[str, str], roles: list[str]) -> str:
+    merchant_name = fields.get("merchant_name", "").strip()
+    facts = {"headline": fields.get("headline", "").strip()}
+    if fields.get("subtitle", "").strip():
+        facts["subtitle"] = fields["subtitle"].strip()
+    image_lines = "\n".join(f"- Image {i + 1}: {role.upper()}" for i, role in enumerate(roles)) or "- No input images."
+    role_rules = "\n".join(
+        FREE_PRODUCT_ROLE_RULE if role == "product" else server.ROLE_RULES[role]
+        for role in dict.fromkeys(roles)
+    )
+    notes = fields.get("additional_notes", "").strip()
+    direction = (
+        """CREATIVE ART DIRECTION — AI FREESTYLE
+
+Act as an experienced commercial advertising art director, not merely a layout generator.
+
+Before composing the image, internally establish one coherent creative concept based on the headline, subtitle, notes and supplied products.
+
+Develop a deliberate visual direction through:
+- A distinctive creative concept supporting the marketing message.
+- An intentional color palette with clear relationships, contrast and hierarchy.
+- A designed background environment that contributes to the concept.
+- Considered lighting, depth, materials, textures and spatial relationships.
+- Expressive typography and composition with clear visual rhythm.
+- Product presentation integrated naturally into the visual environment.
+
+Choose the most suitable visual treatment freely: commercial photography, editorial design, illustration, dimensional graphics, stylized environments or mixed media.
+
+Minimalism and clean backgrounds are allowed when they represent a deliberate and compelling creative concept.
+
+Avoid generic catalog-style compositions consisting only of plain backgrounds, centered headlines, isolated products and incidental decorations.
+
+Prioritize a cohesive, publication-ready commercial advertising design over simply arranging the supplied elements.
+
+When the user provides visual instructions in NOTES, incorporate them into the creative direction while respecting higher-priority content accuracy and layout constraints.
+
+When no visual instructions are supplied, independently choose a suitable creative direction instead of defaulting to a generic minimalist layout.
+
+When no PRODUCT image is supplied, create a reasonable product visual from the user-provided copy and notes without inventing packaging, certifications, product effects, brand claims or marketing facts. Do not reduce the art direction to a generic white-background layout merely because no real image exists, and do not claim that the inferred product exactly matches a real product. When PRODUCT images are supplied, treat their real appearance as authoritative while independently designing the overall advertising scene."""
+        if fields.get("creation_method", "ai_free") == "ai_free"
+        else "Infer and transfer the supplied STYLE REFERENCE visual language. Do not mechanically copy its composition."
+    )
+    return f"""Create one finished Chinese Xiaohongshu merchant poster creative in an 8:9 portrait canvas.
+
+This is the complete semantic creative plate for the middle of a later 3:4 poster. Do not add Fantuan or merchant logos; authoritative brand assets are added locally afterward.
+
+CANVAS
+- Output aspect ratio: exactly 8:9, opaque, full bleed. Compose directly for this canvas.
+- The outer 30 px at both the top and bottom are crop buffers and may contain continuous background only. Keep every semantic element outside them.
+- After removing those buffers, the 1080x1155 creative is placed pixel-for-pixel at y=160-1314 of the final 1080x1440 canvas.
+
+LOCKED USER COPY
+{json.dumps(facts, ensure_ascii=False, indent=2)}
+- Render the supplied headline verbatim. If a subtitle is supplied, render it verbatim too. Do not rewrite, translate, shorten, embellish or replace either one.
+- Preserve all other explicit facts in the production notes exactly. Omit absent facts and invent nothing.
+- Never invent prices, discounts, dates, locations, participant counts, benefits, offers, endorsements, product claims, application rules or other marketing facts.
+- Do not print metadata keys, filenames, extensions or production instructions.
+
+REFERENCE-ONLY MERCHANT IDENTITY
+{json.dumps(merchant_name, ensure_ascii=False)}
+- Use the merchant name only to understand brand identity, product ownership and creative context. The authoritative merchant name is composed later in the fixed brand information bar.
+- Do not add or repeat the merchant name in the creative area as an extra title, subtitle, badge, label, slogan, pattern or decorative text by default.
+- The merchant name may appear in the creative area only when the user explicitly included it in the supplied headline, subtitle or production notes, or explicitly requested that it be shown there. In that case, preserve the user-supplied wording and placement intent.
+- Never invent, rename, rewrite, abbreviate, translate, stylize into a different name or otherwise modify the merchant name.
+
+INPUT IMAGES
+{image_lines}
+{role_rules}
+
+CREATIVE METHOD
+{direction}
+- A STYLE REFERENCE controls visual language only: setting, palette, materials, typography character, graphic motifs, lighting, treatment, rhythm, density and energy.
+- Never copy reference-image words, numbers, products, packaging, merchant identity or logos. Recompose freely for this poster.
+- Treat each PRODUCT image only as the authority for its product subject, packaging, label and product-logo details. Ignore and replace its source background.
+- Do not force an activity-information panel or any structured event fields. If the production notes explicitly include audience-facing information, present it freely and legibly without adding facts.
+- Keep the headline, optional subtitle and supplied products legible at mobile thumbnail size.
 - Leave the scene visually extendable above and below without bands, borders, inner frames or abrupt horizontal boundaries.
 
 PRODUCTION NOTES
@@ -132,6 +227,7 @@ def call(
     token: str,
     aspect_ratio: str,
     background: str = "opaque",
+    timeout_seconds: int = 360,
 ) -> bytes:
     api_key = server.active_api_key()
     if not api_key:
@@ -146,7 +242,7 @@ def call(
     task_id = str(created.get("data", {}).get("taskId", ""))
     if not task_id:
         raise RuntimeError("KIE_INVALID_RESPONSE:没有返回 taskId。")
-    deadline, delay = time.monotonic() + 360, 2.0
+    deadline, delay = time.monotonic() + timeout_seconds, 2.0
     while time.monotonic() < deadline:
         time.sleep(delay)
         status = server.kie_json_request(f"{server.KIE_API_ROOT}/api/v1/jobs/recordInfo?taskId={task_id}", api_key)
@@ -160,7 +256,7 @@ def call(
             with urllib.request.urlopen(url, timeout=120) as response:
                 return response.read()
         delay = min(delay * 1.35, 8.0)
-    raise RuntimeError("KIE_TIMEOUT:生成超过 6 分钟。")
+    raise RuntimeError(f"KIE_TIMEOUT:生成超过 {timeout_seconds // 60} 分钟。")
 
 
 def mean_abs_difference(left: Image.Image, right: Image.Image) -> float:

@@ -51,8 +51,12 @@ MODEL = os.environ.get("KIE_IMAGE_MODEL", "gpt-image-2-5-sunburst-image-to-image
 KIE_API_ROOT = "https://api.kie.ai"
 KIE_UPLOAD_URL = "https://kieai.redpandaai.co/api/file-stream-upload"
 PROMPT_VERSION = "2026-10-22-svg-exact-central-outpaint-v5.2"
+FREE_CREATION_PROMPT_VERSION = "2026-10-28-free-creation-v1"
 GENERATION_PIPELINE_VERSION = "2026-10-22-sunburst-central-outpaint-v5.2"
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.3.0"
+STANDARD_RECRUITMENT_VERSION = "5.2.0"
+FREE_CREATION_VERSION = "1.0.0"
+SIZE_ADAPTATION_VERSION = "0.0.0-unreleased"
 SESSION_API_KEY = ""
 GENERATION_PROGRESS: dict[str, str] = {}
 
@@ -309,7 +313,13 @@ class Handler(SimpleHTTPRequestHandler):
                 "model": MODEL,
                 "app_version": APP_VERSION,
                 "prompt_version": PROMPT_VERSION,
+                "free_creation_prompt_version": FREE_CREATION_PROMPT_VERSION,
                 "generation_pipeline": GENERATION_PIPELINE_VERSION,
+                "module_versions": {
+                    "standard_recruitment": STANDARD_RECRUITMENT_VERSION,
+                    "free_creation": FREE_CREATION_VERSION,
+                    "size_adaptation": SIZE_ADAPTATION_VERSION,
+                },
                 "validation_status": "test_succeeded",
                 "default_generation_mode": "v5.2",
                 "paid_calls_per_poster": 2,
@@ -450,10 +460,17 @@ class Handler(SimpleHTTPRequestHandler):
         if fields.get("cost_confirmation") != "on":
             raise RuntimeError("COST_CONFIRMATION_REQUIRED:请先确认本次会调用 2 次付费图片 API。")
 
+        workbench_mode = fields.get("workbench_mode", "standard")
+        if workbench_mode not in {"standard", "free_creation"}:
+            raise RuntimeError("WORKBENCH_MODE_INVALID")
+        creation_method = fields.get("creation_method", "ai_free")
+        if workbench_mode == "free_creation" and creation_method not in {"ai_free", "style_reference"}:
+            raise RuntimeError("CREATION_METHOD_INVALID")
         references = [item for item in files if item[0] == "images"]
         logos = [item for item in files if item[0] == "merchant_logo"]
-        if not 1 <= len(references) <= 9:
-            raise RuntimeError("IMAGE_COUNT_INVALID:请上传 1–9 张生成素材。")
+        minimum_images = 0 if workbench_mode == "free_creation" else 1
+        if not minimum_images <= len(references) <= 9:
+            raise RuntimeError("IMAGE_COUNT_INVALID:标准招募模式请上传 1–9 张生成素材。")
         for _, _, payload, content_type in references + logos:
             if content_type not in ALLOWED_TYPES:
                 raise RuntimeError(f"IMAGE_TYPE_INVALID:{content_type}")
@@ -479,6 +496,13 @@ class Handler(SimpleHTTPRequestHandler):
             or any(not isinstance(role, str) or role not in ROLE_RULES for role in roles)
         ):
             raise RuntimeError("IMAGE_ROLES_INVALID")
+        if workbench_mode == "free_creation":
+            if not fields.get("headline", "").strip():
+                raise RuntimeError("HEADLINE_REQUIRED:自由创作模式必须填写主标题。")
+            if creation_method == "ai_free" and any(role != "product" for role in roles):
+                raise RuntimeError("AI_FREE_ROLES_INVALID:AI 自由创意模式的上传图片只能标记为真实产品。")
+            if creation_method == "style_reference" and "style_reference" not in roles:
+                raise RuntimeError("STYLE_REFERENCE_REQUIRED:视觉参考创作必须上传并标记至少一张风格参考图。")
 
         preflight_brand_overlay(
             merchant_name,
@@ -507,7 +531,8 @@ class Handler(SimpleHTTPRequestHandler):
 
         v52.server.SESSION_API_KEY = active_api_key()
         role_values = [str(role) for role in roles]
-        central_prompt = v52.build_central_prompt(fields, role_values)
+        central_prompt = (v52.build_free_creation_prompt(fields, role_values)
+                          if workbench_mode == "free_creation" else v52.build_central_prompt(fields, role_values))
         outpaint_prompt = v52.build_outpaint_prompt()
         request_record = {
             "job_id": job_id,
@@ -516,7 +541,9 @@ class Handler(SimpleHTTPRequestHandler):
             "roles": roles,
             "model": MODEL,
             "generation_mode": "v5.2",
-            "prompt_version": PROMPT_VERSION,
+            "workbench_mode": workbench_mode,
+            "creation_method": creation_method if workbench_mode == "free_creation" else None,
+            "prompt_version": FREE_CREATION_PROMPT_VERSION if workbench_mode == "free_creation" else PROMPT_VERSION,
             "production_ready": True,
             "validation_status": "test_succeeded",
             "generation_pipeline": {
@@ -537,7 +564,14 @@ class Handler(SimpleHTTPRequestHandler):
             encoding="utf-8",
         )
 
-        central_bytes = v52.call(central_prompt, stored_images, job_id + "-central", "8:9")
+        generation_timeout = 600
+        central_bytes = v52.call(
+            central_prompt,
+            stored_images,
+            job_id + "-central",
+            "8:9",
+            timeout_seconds=generation_timeout,
+        )
         central_api = job_dir / "central-api.png"
         v52.normalize(central_bytes, central_api, v52.CENTRAL_API_SIZE, 8 / 9)
         central_path = job_dir / "central.png"
@@ -553,6 +587,7 @@ class Handler(SimpleHTTPRequestHandler):
             job_id + "-outpaint",
             "3:4",
             background="auto",
+            timeout_seconds=generation_timeout,
         )
         base_path = job_dir / "generated-base-1080x1440.png"
         v52.normalize(base_bytes, base_path, v52.FINAL_SIZE, 3 / 4)

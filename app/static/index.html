@@ -3,12 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="饭团小红书招募海报工作台">
-  <title>饭团招募海报工作台</title>
+  <meta name="description" content="饭团小红书海报工作台">
+  <title>饭团小红书海报工作台</title>
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/cost-confirm.css">
   <link rel="stylesheet" href="/api-key.css">
-  <style>.generation-stages{display:flex;gap:7px;justify-content:center;list-style:none;margin:15px 0 0;padding:0}.generation-stages li{color:#899794;font-size:9px}.generation-stages li+li::before{content:"→";margin-right:7px;color:#aab4b2}.generation-stages li.active{color:var(--teal-dark);font-weight:800}.generation-stages li.done{color:#50806f}.field-hint{font-size:10px;color:#84918f;line-height:1.5}.field-hint.field-error{color:#b64b2d}.fields label[hidden]{display:none!important}</style>
+  <style>.generation-stages{display:flex;gap:7px;justify-content:center;list-style:none;margin:15px 0 0;padding:0}.generation-stages li{color:#899794;font-size:9px}.generation-stages li+li::before{content:"→";margin-right:7px;color:#aab4b2}.generation-stages li.active{color:var(--teal-dark);font-weight:800}.generation-stages li.done{color:#50806f}.field-hint{font-size:10px;color:#84918f;line-height:1.5}.field-hint.field-error{color:#b64b2d}.fields label[hidden]{display:none!important}.mode-switcher{display:flex;gap:8px;margin-top:20px;padding:5px;background:#edf3f1;border:1px solid var(--line);border-radius:14px;width:max-content}.mode-tab{border:0;background:transparent;color:#657471;border-radius:10px;padding:10px 16px;font-size:12px;font-weight:800;cursor:pointer}.mode-tab.active{background:#fff;color:var(--teal-dark);box-shadow:0 3px 10px rgba(15,55,51,.09)}.mode-tab:disabled{cursor:not-allowed;opacity:.48}.mode-tab small{font-size:8px;margin-left:4px}.creation-method{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 16px}.creation-method label{position:relative}.creation-method input{position:absolute;opacity:0}.creation-method span{display:flex;flex-direction:column;gap:3px;border:1px solid var(--line);border-radius:12px;padding:12px;cursor:pointer;background:#fff}.creation-method input:checked+span{border-color:var(--teal);box-shadow:0 0 0 2px rgba(20,193,193,.12);background:#f5fdfc}.creation-method b{font-size:12px}.creation-method small{font-size:10px;color:#84918f}</style>
+  <style>[hidden]{display:none!important}</style>
+  <style>.asset-fixed-role{display:block;width:100%;border-top:1px solid var(--line);background:#fff;padding:8px 9px;font-size:11px;font-weight:700;color:var(--teal-dark)}</style>
 </head>
 <body>
   <div class="ambient ambient-a" aria-hidden="true"></div>
@@ -23,28 +25,38 @@
 
   <main class="workspace">
     <section class="intro">
-      <p class="eyebrow">饭团 · 小红书招募海报制作</p>
-      <p>上传素材、填写活动信息，系统会生成主视觉，并自动合成饭团固定信息条。</p>
+      <p class="eyebrow">饭团 · 小红书海报制作</p>
+      <p id="introCopy">上传素材、填写活动信息，系统会生成主视觉，并自动合成饭团固定信息条。</p>
+      <nav class="mode-switcher" aria-label="工作台模式">
+        <button type="button" class="mode-tab active" data-mode="standard">标准招募</button>
+        <button type="button" class="mode-tab" data-mode="free_creation">自由创作</button>
+        <button type="button" class="mode-tab" data-mode="size_adaptation" disabled title="后续版本开放">尺寸适配 <small>即将开放</small></button>
+      </nav>
     </section>
 
     <div class="editor-grid">
       <form id="posterForm" class="form-panel" novalidate>
+        <input id="workbenchMode" name="workbench_mode" type="hidden" value="standard">
         <section class="form-section asset-section">
           <div class="section-head">
             <div><span class="step">01</span><h2>上传真实素材</h2></div>
             <span id="assetCount" class="count">0 / 9</span>
           </div>
-          <p class="section-help">上传菜品、饮品、环境或风格参考。商家 Logo 在下方单独上传。</p>
+          <p id="assetHelp" class="section-help">上传菜品、饮品、环境或风格参考。商家 Logo 在下方单独上传。</p>
+          <div id="creationMethodField" class="creation-method" hidden>
+            <label><input type="radio" name="creation_method" value="ai_free" checked><span><b>AI 自由创意</b><small>根据文案与可选产品素材原创视觉</small></span></label>
+            <label><input type="radio" name="creation_method" value="style_reference"><span><b>视觉参考创作</b><small>迁移视觉语言，不强制复刻构图</small></span></label>
+          </div>
           <label id="dropzone" class="dropzone" for="images">
             <input id="images" name="images" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
             <span class="drop-icon" aria-hidden="true">+</span>
-            <strong>选择或拖入图片</strong>
+            <strong id="dropzoneTitle">选择或拖入图片</strong>
             <span>JPG、PNG、WebP · 单张不超过 20 MB</span>
           </label>
           <div id="assetGrid" class="asset-grid" aria-live="polite"></div>
         </section>
 
-        <section class="form-section">
+        <section id="standardFields" class="form-section">
           <div class="section-head"><div><span class="step">02</span><h2>填写活动事实</h2></div></div>
           <p class="section-help">这些内容将锁定到海报中。不确定的信息可以留空，系统不会自行补造。</p>
           <div class="fields two-col">
@@ -63,12 +75,22 @@
           </div>
         </section>
 
+        <section id="freeFields" class="form-section" hidden>
+          <div class="section-head"><div><span class="step">02</span><h2>填写创作内容</h2></div></div>
+          <p class="section-help">主标题与副标题会按原文保留；未提供的营销事实不会自行补造。</p>
+          <div class="fields two-col">
+            <label class="span-2"><span>商家名称 <b>*</b></span><input name="free_merchant_name" placeholder="例如：澜记香港茶餐厅" aria-describedby="freeMerchantNameHint"><small id="freeMerchantNameHint" class="field-hint" aria-live="polite">最多 10 个字符</small></label>
+            <label class="span-2"><span>主标题 <b>*</b></span><input name="free_headline" placeholder="按原文生成，不自动改写"></label>
+            <label class="span-2"><span>副标题</span><input name="free_subtitle" placeholder="选填；填写后按原文生成"></label>
+          </div>
+        </section>
+
         <section class="form-section">
           <div class="section-head"><div><span class="step">03</span><h2>完成输出设置</h2></div></div>
           <div class="fields two-col compact-fields">
             <label class="span-2"><span>信息条模式</span><select id="overlayMode" name="overlay_mode"><option value="co_brand">饭团 + 商家 Logo</option><option value="fantuan_only">仅饭团 Logo</option></select></label>
             <label id="logoField" class="span-2 logo-field"><span>商家 Logo <b>*</b></span><input id="merchantLogo" name="merchant_logo" type="file" accept="image/png,image/jpeg,image/webp"><small>仅用于最终确定性合成，不发给图片模型重绘。</small></label>
-            <label class="span-2"><span>其他要求</span><textarea name="additional_notes" rows="3" placeholder="例如：产品一主两辅；时间先留空"></textarea></label>
+            <label class="span-2"><span>其他要求</span><textarea id="additionalNotes" name="additional_notes" rows="3" placeholder="例如：产品一主两辅；时间先留空"></textarea></label>
           </div>
         </section>
 
