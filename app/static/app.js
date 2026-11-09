@@ -13,6 +13,13 @@ const workbenchMode = document.querySelector('#workbenchMode');
 const modeTabs = [...document.querySelectorAll('.mode-tab[data-mode]')];
 const standardFields = document.querySelector('#standardFields');
 const freeFields = document.querySelector('#freeFields');
+const assetSection = document.querySelector('#assetSection');
+const resizeFields = document.querySelector('#resizeFields');
+const sourcePoster = document.querySelector('#sourcePoster');
+const resizeDropzone = document.querySelector('#resizeDropzone');
+const resizeFileName = document.querySelector('#resizeFileName');
+const resizeMerchantName = document.querySelector('#resizeMerchantName');
+const resizeMerchantNameHint = document.querySelector('#resizeMerchantNameHint');
 const creationMethodField = document.querySelector('#creationMethodField');
 const introCopy = document.querySelector('#introCopy');
 const assetHelp = document.querySelector('#assetHelp');
@@ -20,6 +27,10 @@ const freeMerchantName = form.elements.free_merchant_name;
 const freeHeadline = form.elements.free_headline;
 const freeSubtitle = form.elements.free_subtitle;
 const additionalNotes = document.querySelector('#additionalNotes');
+const additionalNotesField = document.querySelector('#additionalNotesField');
+const submitTitle = document.querySelector('#submitTitle');
+const submitMeta = document.querySelector('#submitMeta');
+const costConfirmCopy = document.querySelector('.cost-confirm span');
 const apiState = document.querySelector('#apiState');
 const button = document.querySelector('#generateButton');
 const emptyPreview = document.querySelector('#emptyPreview');
@@ -42,14 +53,16 @@ const closeKeyDialog = document.querySelector('#closeKeyDialog');
 
 let assets = [];
 let freeCreationBackendReady = false;
+let resizeBackendReady = false;
 const MERCHANT_NAME_MAX_CHARS = 10;
 const roles = [
   ['product', '真实产品'], ['style_reference', '风格参考']
 ];
 
 function validateMerchantName() {
-  const activeName = workbenchMode.value === 'free_creation' ? freeMerchantName : merchantName;
-  const activeHint = workbenchMode.value === 'free_creation' ? document.querySelector('#freeMerchantNameHint') : merchantNameHint;
+  const resize = workbenchMode.value === 'size_adaptation';
+  const activeName = resize ? resizeMerchantName : (workbenchMode.value === 'free_creation' ? freeMerchantName : merchantName);
+  const activeHint = resize ? resizeMerchantNameHint : (workbenchMode.value === 'free_creation' ? document.querySelector('#freeMerchantNameHint') : merchantNameHint);
   const count = Array.from(activeName.value).length;
   const overflow = count > MERCHANT_NAME_MAX_CHARS;
   activeName.setCustomValidity(overflow ? `商家名称最多填写 ${MERCHANT_NAME_MAX_CHARS} 个字符。` : '');
@@ -63,28 +76,47 @@ function validateMerchantName() {
 
 merchantName.addEventListener('input', validateMerchantName);
 freeMerchantName.addEventListener('input', validateMerchantName);
+resizeMerchantName.addEventListener('input', validateMerchantName);
 validateMerchantName();
 
 function syncWorkbenchMode(mode) {
-  if (mode === 'size_adaptation') return;
   const free = mode === 'free_creation';
+  const resize = mode === 'size_adaptation';
   workbenchMode.value = mode;
-  standardFields.hidden = free;
+  assetSection.hidden = resize;
+  resizeFields.hidden = !resize;
+  standardFields.hidden = free || resize;
   freeFields.hidden = !free;
-  standardFields.querySelectorAll('input,select,textarea').forEach(control => { control.disabled = free; });
+  assetSection.querySelectorAll('input,select,textarea').forEach(control => { control.disabled = resize; });
+  standardFields.querySelectorAll('input,select,textarea').forEach(control => { control.disabled = free || resize; });
   freeFields.querySelectorAll('input,select,textarea').forEach(control => { control.disabled = !free; });
+  resizeFields.querySelectorAll('input,select,textarea').forEach(control => { control.disabled = !resize; });
   creationMethodField.hidden = !free;
-  merchantName.required = !free;
-  form.elements.recruitment_type.required = !free;
+  additionalNotesField.hidden = resize;
+  additionalNotes.disabled = resize;
+  merchantName.required = !free && !resize;
+  form.elements.recruitment_type.required = !free && !resize;
   freeMerchantName.required = free;
   freeHeadline.required = free;
-  introCopy.textContent = free
-    ? '输入标题并按需上传产品或视觉参考，系统会自由设计主视觉并自动合成饭团固定信息条。'
-    : '上传素材、填写活动信息，系统会生成主视觉，并自动合成饭团固定信息条。';
+  resizeMerchantName.required = resize;
+  sourcePoster.required = resize;
+  introCopy.textContent = resize
+    ? '上传已设计完成的海报，系统会智能重排为 3:4，并统一合成饭团固定信息条。'
+    : free
+      ? '输入标题并按需上传产品或视觉参考，系统会自由设计主视觉并自动合成饭团固定信息条。'
+      : '上传素材、填写活动信息，系统会生成主视觉，并自动合成饭团固定信息条。';
   assetHelp.textContent = free
     ? '产品素材选填；选择“视觉参考创作”时，必须至少上传并标记一张风格参考图。'
     : '上传菜品、饮品、环境或风格参考。商家 Logo 在下方单独上传。';
   modeTabs.forEach(tab => tab.classList.toggle('active', tab.dataset.mode === mode));
+  submitTitle.textContent = resize ? '适配 1 张最终海报' : '生成 1 张最终海报';
+  submitMeta.textContent = resize
+    ? '1080 × 1440 PNG · 预计 12 credits'
+    : '1080 × 1440 PNG · Prompt v5.2 · 预计 12 credits';
+  costConfirmCopy.textContent = resize
+    ? '我确认本次会调用 2 次付费 API（约 12 credits）'
+    : '我确认本次会调用 2 次付费 API（约 12 credits）';
+  button.querySelector('span').textContent = resize ? '开始适配' : '开始创建';
   syncAssetMode();
   validateMerchantName();
 }
@@ -96,6 +128,7 @@ async function checkHealth() {
     const response = await fetch('/api/health', {cache: 'no-store'});
     const data = await response.json();
     freeCreationBackendReady = Boolean(data.free_creation_prompt_version);
+    resizeBackendReady = Boolean(data.resize_prompt_version && data.module_versions?.size_adaptation === '1.3.0-beta');
     if (data.api_configured && data.skill_assets_ready) {
       apiState.className = 'api-state ready';
       apiState.innerHTML = '<span></span>生成服务已就绪';
@@ -194,6 +227,11 @@ document.querySelectorAll('input[name="creation_method"]').forEach(input => {
 });
 
 imageInput.addEventListener('change', event => addFiles(event.target.files));
+sourcePoster.addEventListener('change', () => {
+  const file = sourcePoster.files[0];
+  resizeFileName.textContent = file ? file.name : '选择一张成品海报';
+  resizeDropzone.classList.remove('invalid');
+});
 ['dragenter', 'dragover'].forEach(name => dropzone.addEventListener(name, event => {event.preventDefault(); dropzone.classList.add('drag');}));
 ['dragleave', 'drop'].forEach(name => dropzone.addEventListener(name, event => {event.preventDefault(); dropzone.classList.remove('drag');}));
 dropzone.addEventListener('drop', event => addFiles(event.dataTransfer.files));
@@ -210,6 +248,8 @@ overlayMode.addEventListener('change', syncLogoMode);
 syncLogoMode();
 
 const stageCopy = {
+  validating: ['本地预检', '正在检查源海报与品牌信息条…'],
+  resize: ['智能重排', '正在保留原内容与风格并适配中央安全区域…'],
   creative: ['创意生成', '正在生成中央完整创意…'],
   outpaint: ['背景扩展', '中央创意已生成，正在连续扩展上下环境背景…'],
   compose: ['品牌合成', '背景扩展已完成，正在合成固定品牌信息条…'],
@@ -220,7 +260,9 @@ function showGenerationStage(stage) {
   const [title, detail] = stageCopy[stage] || stageCopy.creative;
   workingTitle.textContent = title;
   workingDetail.textContent = detail;
-  const names = ['creative', 'outpaint', 'compose'];
+  const resize = workbenchMode.value === 'size_adaptation';
+  const names = resize ? ['resize', 'outpaint', 'compose'] : ['creative', 'outpaint', 'compose'];
+  generationStages[0].textContent = resize ? '智能重排' : '创意生成';
   const activeIndex = stage === 'completed' ? generationStages.length : Math.max(0, names.indexOf(stage));
   generationStages.forEach((item, index) => {
     item.classList.toggle('done', index < activeIndex);
@@ -246,7 +288,8 @@ async function trackGenerationProgress(progressId, signal) {
 
 function setWorking(active) {
   button.disabled = active;
-  button.querySelector('span').textContent = active ? '正在创建…' : '开始创建';
+  const resize = workbenchMode.value === 'size_adaptation';
+  button.querySelector('span').textContent = active ? (resize ? '正在适配…' : '正在创建…') : (resize ? '开始适配' : '开始创建');
   emptyPreview.hidden = active || !resultImage.hidden;
   workingState.hidden = !active;
   if (active) { resultImage.hidden = true; resultActions.hidden = true; errorBox.hidden = true; }
@@ -267,37 +310,47 @@ form.addEventListener('submit', async event => {
   validateMerchantName();
   if (!form.checkValidity()) { form.reportValidity(); return; }
   const free = workbenchMode.value === 'free_creation';
+  const resize = workbenchMode.value === 'size_adaptation';
   const creationMethod = form.elements.creation_method.value;
   if (free && !freeCreationBackendReady) {
     showError('当前后端尚未加载自由创作 V1。请重启本地工作台后再试，本次未发起图片 API 调用。');
     return;
   }
-  if (!free && assets.length < 1) { dropzone.classList.add('invalid'); showError('请至少上传 1 张真实产品或参考图片。'); return; }
+  if (resize && !resizeBackendReady) {
+    showError('当前后端尚未加载 Resize V1。请重启本地工作台后再试，本次未发起图片 API 调用。');
+    return;
+  }
+  if (!free && !resize && assets.length < 1) { dropzone.classList.add('invalid'); showError('请至少上传 1 张真实产品或参考图片。'); return; }
+  if (resize && !sourcePoster.files[0]) { resizeDropzone.classList.add('invalid'); showError('请上传一张已完成海报。'); return; }
   if (free && creationMethod === 'style_reference' && !assets.some(asset => asset.role === 'style_reference')) {
     dropzone.classList.add('invalid'); showError('视觉参考创作需要至少一张标记为“风格参考”的图片。'); return;
   }
   if (overlayMode.value === 'co_brand' && !merchantLogo.files[0]) { merchantLogo.classList.add('invalid'); showError('联名模式需要上传真实商家 Logo。'); return; }
 
   const data = new FormData(form);
-  if (free) {
+  if (resize) {
+    data.set('merchant_name', resizeMerchantName.value);
+  } else if (free) {
     data.set('merchant_name', freeMerchantName.value);
     data.set('headline', freeHeadline.value);
     data.set('subtitle', freeSubtitle.value);
   }
   const progressId = crypto.randomUUID();
   data.set('progress_id', progressId);
-  data.delete('images');
-  assets.forEach(asset => data.append('images', asset.file, asset.file.name));
-  const submittedRoles = free && creationMethod === 'ai_free'
-    ? assets.map(() => 'product')
-    : assets.map(asset => asset.role);
-  data.set('image_roles', JSON.stringify(submittedRoles));
+  if (!resize) {
+    data.delete('images');
+    assets.forEach(asset => data.append('images', asset.file, asset.file.name));
+    const submittedRoles = free && creationMethod === 'ai_free'
+      ? assets.map(() => 'product')
+      : assets.map(asset => asset.role);
+    data.set('image_roles', JSON.stringify(submittedRoles));
+  }
   setWorking(true);
-  showGenerationStage('creative');
+  showGenerationStage(resize ? 'validating' : 'creative');
   const progressController = new AbortController();
   const progressTracker = trackGenerationProgress(progressId, progressController.signal);
   try {
-    const response = await fetch('/api/generate', {method: 'POST', body: data});
+    const response = await fetch(resize ? '/api/resize' : '/api/generate', {method: 'POST', body: data});
     const payload = await response.json();
     if (!response.ok) {
       const detail = payload.detail ? payload.detail.replace(/^(?:OPENAI|KIE)_[A-Z_]+:\d*:?/, '').trim() : '';
@@ -315,6 +368,7 @@ form.addEventListener('submit', async event => {
     resultStatusTitle.textContent = '机械验证通过';
     resultStatusNote.textContent = '尺寸与固定模板像素已核对；视觉仍需人工确认。';
     downloadButton.textContent = '下载 PNG';
+    button.querySelector('span').textContent = resize ? '重新生成' : '开始创建';
     errorBox.hidden = true;
   } catch (error) {
     showError(error.message || '生成失败，请检查服务状态。');

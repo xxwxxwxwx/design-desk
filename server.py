@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import base64
+import io
 import ipaddress
 import json
 import mimetypes
 import os
 import secrets
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -53,10 +55,11 @@ KIE_UPLOAD_URL = "https://kieai.redpandaai.co/api/file-stream-upload"
 PROMPT_VERSION = "2026-10-22-svg-exact-central-outpaint-v5.2"
 FREE_CREATION_PROMPT_VERSION = "2026-10-28-free-creation-v1"
 GENERATION_PIPELINE_VERSION = "2026-10-22-sunburst-central-outpaint-v5.2"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.5.0-beta"
 STANDARD_RECRUITMENT_VERSION = "5.2.0"
 FREE_CREATION_VERSION = "1.0.0"
-SIZE_ADAPTATION_VERSION = "0.0.0-unreleased"
+SIZE_ADAPTATION_VERSION = "1.3.0-beta"
+RESIZE_PROMPT_VERSION = "2026-11-04-resize-layout-adaptation-8x9-internal-inventory-v1"
 SESSION_API_KEY = ""
 GENERATION_PROGRESS: dict[str, str] = {}
 
@@ -314,6 +317,7 @@ class Handler(SimpleHTTPRequestHandler):
                 "app_version": APP_VERSION,
                 "prompt_version": PROMPT_VERSION,
                 "free_creation_prompt_version": FREE_CREATION_PROMPT_VERSION,
+                "resize_prompt_version": RESIZE_PROMPT_VERSION,
                 "generation_pipeline": GENERATION_PIPELINE_VERSION,
                 "module_versions": {
                     "standard_recruitment": STANDARD_RECRUITMENT_VERSION,
@@ -323,6 +327,11 @@ class Handler(SimpleHTTPRequestHandler):
                 "validation_status": "test_succeeded",
                 "default_generation_mode": "v5.2",
                 "paid_calls_per_poster": 2,
+                "module_paid_calls": {
+                    "standard_recruitment": 2,
+                    "free_creation": 2,
+                    "size_adaptation": 2,
+                },
                 "skill_assets_ready": all(path.is_file() for path in required),
             })
             return
@@ -364,7 +373,7 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path == "/api/settings/api-key":
             self.handle_api_key_setting()
             return
-        if self.path != "/api/generate":
+        if self.path not in {"/api/generate", "/api/resize"}:
             self.send_error(404)
             return
         length = int(self.headers.get("Content-Length", "0") or 0)
@@ -391,7 +400,10 @@ class Handler(SimpleHTTPRequestHandler):
             else:
                 fields[name] = payload.decode(part.get_content_charset() or "utf-8", "replace")
         try:
-            self.handle_generation(fields, files)
+            if self.path == "/api/resize":
+                self.handle_resize(fields, files)
+            else:
+                self.handle_generation(fields, files)
         except RuntimeError as exc:
             progress_id = fields.get("progress_id", "")
             if progress_id:
@@ -448,6 +460,195 @@ class Handler(SimpleHTTPRequestHandler):
                 return
         SESSION_API_KEY = key
         self.send_json(200, {"status": "configured" if key else "cleared", "api_configured": bool(key), "provider": "KIE"})
+
+    def handle_resize(self, fields: dict[str, str], files: list[tuple[str, str, bytes, str]]) -> None:
+        progress_id = fields.get("progress_id", "").strip()
+        if progress_id and not progress_id.replace("-", "").isalnum():
+            raise RuntimeError("PROGRESS_ID_INVALID")
+        if progress_id:
+            GENERATION_PROGRESS[progress_id] = "validating"
+        if not active_api_key():
+            raise RuntimeError("KIE_API_KEY_MISSING")
+        if fields.get("cost_confirmation") != "on":
+            raise RuntimeError("COST_CONFIRMATION_REQUIRED:请先确认本次会调用付费图片 API。")
+
+        sources = [item for item in files if item[0] == "source_poster"]
+        logos = [item for item in files if item[0] == "merchant_logo"]
+        if len(sources) != 1:
+            raise RuntimeError("SOURCE_POSTER_REQUIRED:尺寸适配必须上传且只能上传一张已完成海报。")
+        if len(logos) > 1:
+            raise RuntimeError("MERCHANT_LOGO_COUNT_INVALID:商家 Logo 最多上传一张。")
+        for _, _, payload, content_type in sources + logos:
+            if content_type not in ALLOWED_TYPES:
+                raise RuntimeError(f"IMAGE_TYPE_INVALID:{content_type}")
+            if not payload or len(payload) > MAX_IMAGE_BYTES:
+                raise RuntimeError("IMAGE_SIZE_INVALID:单张图片必须小于 20 MB。")
+
+        merchant_name = fields.get("merchant_name", "").strip()
+        if not merchant_name:
+            raise RuntimeError("MERCHANT_NAME_REQUIRED")
+        overlay_mode = fields.get("overlay_mode", "co_brand")
+        if overlay_mode not in {"co_brand", "fantuan_only"}:
+            raise RuntimeError("OVERLAY_MODE_INVALID")
+        validate_merchant_name(merchant_name, overlay_mode)
+        if overlay_mode == "co_brand" and len(logos) != 1:
+            raise RuntimeError("MERCHANT_LOGO_REQUIRED:联名模式需要一张真实商家 Logo。")
+        resize_strategy = fields.get("resize_strategy", "two_stage_layout")
+        if resize_strategy not in {"two_stage_layout", "pixel_authority", "single_call_reflow"}:
+            raise RuntimeError("RESIZE_STRATEGY_INVALID")
+
+        source = sources[0]
+        try:
+            with Image.open(io.BytesIO(source[2])) as image:
+                image.verify()
+            with Image.open(io.BytesIO(source[2])) as image:
+                source_width, source_height = image.size
+        except (OSError, ValueError) as exc:
+            raise RuntimeError("SOURCE_POSTER_INVALID:上传的海报无法解码。") from exc
+        if source_width < 64 or source_height < 64:
+            raise RuntimeError("SOURCE_POSTER_TOO_SMALL:海报宽高均不得小于 64 px。")
+
+        preflight_brand_overlay(merchant_name, overlay_mode, logos[0] if logos else None)
+
+        job_id = time.strftime("%Y%m%d-%H%M%S-") + secrets.token_hex(4)
+        job_dir = JOBS / job_id
+        job_dir.mkdir(parents=True, exist_ok=False)
+        source_path = job_dir / f"source-poster{safe_suffix(source[3])}"
+        source_path.write_bytes(source[2])
+        logo_path: Path | None = None
+        if logos:
+            logo_path = job_dir / f"merchant-logo{safe_suffix(logos[0][3])}"
+            logo_path.write_bytes(logos[0][2])
+
+        pipeline_path = str(ROOT / "pipeline")
+        if pipeline_path not in sys.path:
+            sys.path.insert(0, pipeline_path)
+        import resize_v1  # type: ignore
+        import v52  # type: ignore
+
+        v52.server.SESSION_API_KEY = active_api_key()
+        experimental_reflow = resize_strategy == "single_call_reflow"
+        two_stage_layout = resize_strategy == "two_stage_layout"
+        outpaint_input = job_dir / "outpaint-input.png"
+        authority_path = job_dir / "source-authority.png"
+        central_prompt = None
+        if two_stage_layout:
+            placement = None
+            central_prompt = resize_v1.build_layout_adaptation_prompt(source_width, source_height)
+            prompt = v52.build_outpaint_prompt()
+        elif experimental_reflow:
+            placement = None
+            prompt = resize_v1.build_single_call_prompt(source_width, source_height)
+        else:
+            placement = resize_v1.prepare_authoritative_canvas(source_path, outpaint_input, authority_path)
+            prompt = resize_v1.build_outpaint_prompt(placement)
+        request_record = {
+            "job_id": job_id,
+            "created_at": int(time.time()),
+            "workbench_mode": "size_adaptation",
+            "source": {"filename": Path(source[1]).name, "width": source_width, "height": source_height},
+            "merchant_name": merchant_name,
+            "overlay_mode": overlay_mode,
+            "model": MODEL,
+            "resize_strategy": resize_strategy,
+            "prompt_version": (resize_v1.TWO_STAGE_PROMPT_VERSION if two_stage_layout else resize_v1.SINGLE_CALL_PROMPT_VERSION if experimental_reflow else resize_v1.PROMPT_VERSION),
+            "production_ready": resize_strategy == "pixel_authority",
+            "experimental": resize_strategy != "pixel_authority",
+            "validation_status": "visual_review_pending",
+            "generation_pipeline": {
+                "version": GENERATION_PIPELINE_VERSION,
+                "calls": 2 if two_stage_layout else 1,
+                "model": MODEL,
+                "resolution_each": "1K",
+                "estimated_credits": 12 if two_stage_layout else 6,
+                "stages": (["layout_adaptation_8x9", "crop_background_buffers", "vertical_outpaint", "reuse_outpaint_result", "brand_overlay"] if two_stage_layout else ["single_call_3_4_reflow", "local_size_normalization", "brand_overlay"] if experimental_reflow else ["authoritative_source_placement", "background_outpaint", "source_pixel_restore", "brand_overlay"]),
+            },
+            "source_placement": placement,
+            "prompts": ({"layout_adaptation_8x9": central_prompt, "outpaint": prompt} if two_stage_layout else {"single_call_reflow" if experimental_reflow else "outpaint": prompt}),
+        }
+        (job_dir / "request.json").write_text(json.dumps(request_record, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        def write_status(status: str, stage: str, **extra: Any) -> None:
+            value = {"job_id": job_id, "status": status, "stage": stage, "updated_at": int(time.time()), **extra}
+            (job_dir / "status.json").write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        generation_timeout = 600
+        try:
+            write_status("running", "layout_adaptation_8x9" if two_stage_layout else "single_call_reflow" if experimental_reflow else "source_placement")
+            if progress_id:
+                GENERATION_PROGRESS[progress_id] = "resize"
+            central_path = job_dir / "central.png"
+            if two_stage_layout:
+                central_bytes = v52.call(
+                    central_prompt, [v52.image_tuple(source_path)], job_id + "-layout-8x9", "8:9",
+                    background="opaque", timeout_seconds=generation_timeout,
+                )
+                central_api_path = job_dir / "central-1080x1215.png"
+                v52.normalize(central_bytes, central_api_path, v52.CENTRAL_API_SIZE, 8 / 9)
+                v52.crop_central_api_image(central_api_path, central_path)
+                v52.prepare_outpaint_input(central_path, outpaint_input)
+            write_status("running", "outpaint")
+            if progress_id:
+                GENERATION_PROGRESS[progress_id] = "outpaint"
+            model_input = source_path if experimental_reflow else outpaint_input
+            base_bytes = v52.call(
+                prompt, [v52.image_tuple(model_input)], job_id + ("-single-call-reflow" if experimental_reflow else "-outpaint"), "3:4",
+                background="auto", timeout_seconds=generation_timeout,
+            )
+            base_path = job_dir / "generated-base-1080x1440.png"
+            if two_stage_layout:
+                generated_path = job_dir / "generated-outpaint-1080x1440.png"
+                v52.normalize(base_bytes, generated_path, v52.FINAL_SIZE, 3 / 4)
+                shutil.copyfile(generated_path, base_path)
+                mechanical_metrics = v52.metrics(central_path, base_path)
+                mechanical_metrics["postprocess_policy"] = "reuse_normalized_outpaint_result_without_central_overwrite"
+            elif experimental_reflow:
+                resize_v1.normalize_single_call_output(base_bytes, job_dir / "single-call.raw.png", base_path)
+                mechanical_metrics = resize_v1.single_call_mechanical_metrics(base_path)
+            else:
+                generated_path = job_dir / "generated-outpaint-1080x1440.png"
+                v52.normalize(base_bytes, generated_path, v52.FINAL_SIZE, 3 / 4)
+                resize_v1.restore_authoritative_region(generated_path, authority_path, placement, base_path)
+                mechanical_metrics = resize_v1.validate_restored_output(base_path, authority_path, placement)
+
+            write_status("running", "compose")
+            if progress_id:
+                GENERATION_PROGRESS[progress_id] = "compose"
+            final_path = job_dir / "final.png"
+            compose_final(base_path, logo_path, merchant_name, overlay_mode, final_path)
+            if two_stage_layout:
+                mechanical_metrics["brand_overlay_scope"] = resize_v1.validate_brand_overlay_scope(base_path, final_path)
+            elif not experimental_reflow:
+                final_source_metrics = resize_v1.validate_restored_output(
+                    final_path, authority_path, placement, reject_white_anomaly=False,
+                )
+                mechanical_metrics["final_source_region_pixel_exact"] = final_source_metrics["source_region_pixel_exact"]
+                mechanical_metrics["final_authority_pixel_sha256"] = final_source_metrics["authority_pixel_sha256"]
+            (job_dir / "metrics.json").write_text(json.dumps(mechanical_metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+            write_status("completed", "completed", visual_review="pending")
+        except Exception as exc:
+            write_status("failed", (GENERATION_PROGRESS.get(progress_id) if progress_id else "processing") or "processing", error=str(exc)[:1800])
+            raise
+
+        if progress_id:
+            GENERATION_PROGRESS[progress_id] = "completed"
+        self.send_json(200, {
+            "job_id": job_id,
+            "status": "completed",
+            "result": {
+                "image_url": f"/api/jobs/{job_id}/image",
+                "download_url": f"/api/jobs/{job_id}/download",
+                "width": 1080,
+                "height": 1440,
+                "format": "png",
+                "mechanical_validation": "passed",
+                "visual_review": "pending",
+                "workbench_mode": "size_adaptation",
+                "resize_strategy": resize_strategy,
+                "estimated_credits": 12 if two_stage_layout else 6,
+                "mechanical_metrics": mechanical_metrics,
+            },
+        })
 
     def handle_generation(self, fields: dict[str, str], files: list[tuple[str, str, bytes, str]]) -> None:
         progress_id = fields.get("progress_id", "").strip()

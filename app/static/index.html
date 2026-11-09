@@ -11,6 +11,7 @@
   <style>.generation-stages{display:flex;gap:7px;justify-content:center;list-style:none;margin:15px 0 0;padding:0}.generation-stages li{color:#899794;font-size:9px}.generation-stages li+li::before{content:"→";margin-right:7px;color:#aab4b2}.generation-stages li.active{color:var(--teal-dark);font-weight:800}.generation-stages li.done{color:#50806f}.field-hint{font-size:10px;color:#84918f;line-height:1.5}.field-hint.field-error{color:#b64b2d}.fields label[hidden]{display:none!important}.mode-switcher{display:flex;gap:8px;margin-top:20px;padding:5px;background:#edf3f1;border:1px solid var(--line);border-radius:14px;width:max-content}.mode-tab{border:0;background:transparent;color:#657471;border-radius:10px;padding:10px 16px;font-size:12px;font-weight:800;cursor:pointer}.mode-tab.active{background:#fff;color:var(--teal-dark);box-shadow:0 3px 10px rgba(15,55,51,.09)}.mode-tab:disabled{cursor:not-allowed;opacity:.48}.mode-tab small{font-size:8px;margin-left:4px}.creation-method{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 16px}.creation-method label{position:relative}.creation-method input{position:absolute;opacity:0}.creation-method span{display:flex;flex-direction:column;gap:3px;border:1px solid var(--line);border-radius:12px;padding:12px;cursor:pointer;background:#fff}.creation-method input:checked+span{border-color:var(--teal);box-shadow:0 0 0 2px rgba(20,193,193,.12);background:#f5fdfc}.creation-method b{font-size:12px}.creation-method small{font-size:10px;color:#84918f}</style>
   <style>[hidden]{display:none!important}</style>
   <style>.asset-fixed-role{display:block;width:100%;border-top:1px solid var(--line);background:#fff;padding:8px 9px;font-size:11px;font-weight:700;color:var(--teal-dark)}</style>
+  <style>.resize-merchant-fields{margin-top:18px}.resize-boundary{margin:15px 0 0;padding:12px 14px;border-radius:11px;background:#f5f8f7;border:1px solid var(--line)}</style>
 </head>
 <body>
   <div class="ambient ambient-a" aria-hidden="true"></div>
@@ -30,14 +31,14 @@
       <nav class="mode-switcher" aria-label="工作台模式">
         <button type="button" class="mode-tab active" data-mode="standard">标准招募</button>
         <button type="button" class="mode-tab" data-mode="free_creation">自由创作</button>
-        <button type="button" class="mode-tab" data-mode="size_adaptation" disabled title="后续版本开放">尺寸适配 <small>即将开放</small></button>
+        <button type="button" class="mode-tab" data-mode="size_adaptation">尺寸适配 <small>V1.3 Beta</small></button>
       </nav>
     </section>
 
     <div class="editor-grid">
       <form id="posterForm" class="form-panel" novalidate>
         <input id="workbenchMode" name="workbench_mode" type="hidden" value="standard">
-        <section class="form-section asset-section">
+        <section id="assetSection" class="form-section asset-section">
           <div class="section-head">
             <div><span class="step">01</span><h2>上传真实素材</h2></div>
             <span id="assetCount" class="count">0 / 9</span>
@@ -54,6 +55,22 @@
             <span>JPG、PNG、WebP · 单张不超过 20 MB</span>
           </label>
           <div id="assetGrid" class="asset-grid" aria-live="polite"></div>
+        </section>
+
+        <section id="resizeFields" class="form-section" hidden>
+          <div class="section-head"><div><span class="step">01</span><h2>上传已完成海报</h2></div></div>
+          <p class="section-help">上传一张任意比例成品海报。第一次 AI 真正适配为 8:9 中央版式，第二次只扩展上下背景，最后本地合成饭团固定信息条。</p>
+          <label id="resizeDropzone" class="dropzone" for="sourcePoster">
+            <input id="sourcePoster" name="source_poster" type="file" accept="image/png,image/jpeg,image/webp" hidden disabled>
+            <span class="drop-icon" aria-hidden="true">+</span>
+            <strong id="resizeFileName">选择一张成品海报</strong>
+            <span>JPG、PNG、WebP · 单张不超过 20 MB</span>
+          </label>
+          <input id="resizeStrategy" name="resize_strategy" type="hidden" value="two_stage_layout" disabled>
+          <div class="fields two-col resize-merchant-fields">
+            <label class="span-2"><span>商家名称 <b>*</b></span><input id="resizeMerchantName" name="resize_merchant_name" placeholder="用于最终品牌信息条" aria-describedby="resizeMerchantNameHint" disabled><small id="resizeMerchantNameHint" class="field-hint" aria-live="polite">最多 10 个字符</small></label>
+          </div>
+          <p class="section-help resize-boundary">文案、产品、Logo 与风格由生成式 AI 尽量保留，最终仍需人工确认。</p>
         </section>
 
         <section id="standardFields" class="form-section">
@@ -90,12 +107,12 @@
           <div class="fields two-col compact-fields">
             <label class="span-2"><span>信息条模式</span><select id="overlayMode" name="overlay_mode"><option value="co_brand">饭团 + 商家 Logo</option><option value="fantuan_only">仅饭团 Logo</option></select></label>
             <label id="logoField" class="span-2 logo-field"><span>商家 Logo <b>*</b></span><input id="merchantLogo" name="merchant_logo" type="file" accept="image/png,image/jpeg,image/webp"><small>仅用于最终确定性合成，不发给图片模型重绘。</small></label>
-            <label class="span-2"><span>其他要求</span><textarea id="additionalNotes" name="additional_notes" rows="3" placeholder="例如：产品一主两辅；时间先留空"></textarea></label>
+            <label id="additionalNotesField" class="span-2"><span>其他要求</span><textarea id="additionalNotes" name="additional_notes" rows="3" placeholder="例如：产品一主两辅；时间先留空"></textarea></label>
           </div>
         </section>
 
         <div class="submit-dock">
-          <div><strong>生成 1 张最终海报</strong><span>1080 × 1440 PNG · Prompt v5.2 · 预计 12 credits</span><label class="cost-confirm"><input name="cost_confirmation" type="checkbox" required> <span>我确认本次会调用 2 次付费 API（约 12 credits）</span></label></div>
+          <div><strong id="submitTitle">生成 1 张最终海报</strong><span id="submitMeta">1080 × 1440 PNG · Prompt v5.2 · 预计 12 credits</span><label class="cost-confirm"><input name="cost_confirmation" type="checkbox" required> <span>我确认本次会调用 2 次付费 API（约 12 credits）</span></label></div>
           <button id="generateButton" type="submit"><span>开始创建</span><i aria-hidden="true">→</i></button>
         </div>
       </form>

@@ -14,12 +14,12 @@ import v52
 
 class FreeCreationTests(unittest.TestCase):
     def test_release_and_three_module_versions_are_explicit(self):
-        self.assertEqual(server.APP_VERSION, "1.3.0")
+        self.assertEqual(server.APP_VERSION, "1.5.0-beta")
         self.assertEqual(server.STANDARD_RECRUITMENT_VERSION, "5.2.0")
         self.assertEqual(server.FREE_CREATION_VERSION, "1.0.0")
-        self.assertEqual(server.SIZE_ADAPTATION_VERSION, "0.0.0-unreleased")
+        self.assertEqual(server.SIZE_ADAPTATION_VERSION, "1.3.0-beta")
         readme = (ROOT / "README.md").read_text()
-        for version in ("1.3.0", "5.2.0", "1.0.0", "0.0.0-unreleased"):
+        for version in ("1.5.0-beta", "5.2.0", "1.0.0", "1.3.0-beta"):
             self.assertIn(version, readme)
 
     def test_prompt_preserves_copy_and_rejects_invented_marketing_facts(self):
